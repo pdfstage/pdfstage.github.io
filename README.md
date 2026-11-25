@@ -12,6 +12,7 @@ Slide-synced browser player for self-contained PDFs with embedded audio and timi
 - **Formatted text copy:** Preserves font family, bold, italic, and underline styling when copying text directly off a slide, with ink-fitted selection highlights.
 - **Precision timeline controls:** Chapter ticks on the seekbar, hover/touch zoom lens for dense decks, playback speed (`0.5×`–`3.0×` in `0.05×` steps) with both original and speed-adjusted timers, and up to `300%` volume boost via Web Audio API.
 - **Offline-first PWA:** Zero external runtime dependencies (bundles PDF.js and its worker inline), installable via Web App Manifest with OS `.pdf` file-handler integration (`launchQueue`), drag-and-drop, and offline caching.
+- **Zero-install browser packer (`/cast/`):** Create `.stage.pdf` files directly in the browser at [`/cast/`](https://pdfstage.github.io/cast/) by exporting slides as `.pdf` from PowerPoint and dropping `.ppsx`/`.pptx` + `.pdf` together — merges narration audio into Ogg Opus via Web Audio + WebCodecs without FFmpeg or uploads (supports multi-file batch pairing & ZIP download).
 
 ## Keyboard Shortcuts
 

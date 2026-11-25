@@ -27,7 +27,11 @@
   .open-sub code { background:#252834; padding:1px 5px; border-radius:4px; color:#e5e7eb; }
   #openHeroBtn { background:#ff0033; color:#fff; border:none; border-radius:8px; padding:10px 20px; font-size:14px; font-weight:600; cursor:pointer; }
   #openHeroBtn:hover { background:#e0002d; }
-  #openBtn { padding:4px 10px; font-size:12.5px; }
+  .open-alt { margin-top:14px; font-size:12.5px; color:#8f96a6; }
+  .open-alt a { color:#d1d5db; text-decoration:underline; text-underline-offset:2px; }
+  .open-alt a:hover { color:#fff; }
+  #openBtn, .hdr-link { padding:4px 10px; font-size:12.5px; background:#262626; color:#eee; border:1px solid #444; border-radius:6px; text-decoration:none; }
+  .hdr-link:hover { background:#383838; }
   body.dragover #stage { outline:2px dashed #ff0033; outline-offset:-8px; }
 
   #tl { position:absolute; left:0; top:0; overflow:hidden; line-height:1; text-size-adjust:none; transform-origin:0 0; pointer-events:none; mix-blend-mode:multiply; }
@@ -150,6 +154,7 @@
   <div id="deckTitle" inert>pdfstage</div>
   <div class="hdr-right">
     <div id="folie" class="hint" inert></div>
+    <a class="hdr-link" href="./cast/" title="PowerPoint + PDF im Browser zusammenführen">/cast</a>
     <button id="openBtn" type="button" title="PDF-Datei öffnen">PDF öffnen</button>
     <input id="fileInput" type="file" accept=".pdf,application/pdf" hidden>
   </div>
@@ -160,6 +165,7 @@
       <div class="open-title">pdfstage</div>
       <div class="open-sub">Lokale <code>.pdf</code> (oder <code>.stage.pdf</code> mit eingebettetem Audio) öffnen oder hierher ziehen &mdash; 100&nbsp;% lokal im Browser.</div>
       <button id="openHeroBtn" type="button">PDF öffnen &hellip;</button>
+      <div class="open-alt">Pr&auml;sentation + PDF neu packen? <a href="./cast/">Zu pdfstage / cast</a></div>
     </div>
   </div>
   <div id="wrap" hidden>
@@ -1783,6 +1789,19 @@ if (IS_EMBEDDED) {
         showErr("Datei: " + e.message);
       }
     });
+  }
+
+  window.addEventListener("message", function (e) {
+    if (e.origin !== location.origin || !e.data || typeof e.data !== "object") return;
+    if (e.data.type === "pdfstage:ping" && window.opener) {
+      try { window.opener.postMessage({ type: "pdfstage:ready" }, location.origin); } catch (err) {}
+    } else if (e.data.type === "pdfstage:load" && e.data.bytes) {
+      var bytes = e.data.bytes instanceof Uint8Array ? e.data.bytes : new Uint8Array(e.data.bytes);
+      loadPdfBytes(bytes, e.data.title || "pdfstage");
+    }
+  });
+  if (window.opener && location.hash === "#cast") {
+    try { window.opener.postMessage({ type: "pdfstage:ready" }, location.origin); } catch (err) {}
   }
 
   if (location.protocol !== "file:" && "serviceWorker" in navigator) {

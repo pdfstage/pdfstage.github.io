@@ -1,9 +1,16 @@
-const CACHE_NAME = 'pdfstage-v1';
+const CACHE_NAME = 'pdfstage-v2';
 const SHELL_ASSETS = [
   './',
   './index.html',
   './manifest.json',
-  './icon.svg'
+  './icon.svg',
+  './cast/',
+  './cast/index.html',
+  './cast/cast.js',
+  './cast/ppsx-reader.js',
+  './cast/ogg-opus.js',
+  './cast/pdf-attach.js',
+  './cast/zip-store.js'
 ];
 
 self.addEventListener('install', (event) => {
@@ -36,7 +43,11 @@ self.addEventListener('fetch', (event) => {
         return live;
       } catch {
         const cached = await cache.match(req, { ignoreSearch: true });
-        return cached || (await cache.match('./index.html'));
+        if (cached) return cached;
+        if (url.pathname.includes('/cast')) {
+          return (await cache.match('./cast/index.html')) || (await cache.match('./index.html'));
+        }
+        return await cache.match('./index.html');
       }
     })
   );

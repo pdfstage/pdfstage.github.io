@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ppsx-player-v1';
+const CACHE_NAME = 'pdfstage-v1';
 const SHELL_ASSETS = [
   './',
   './index.html',

@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- Vibecoding project for increased accessibility of ppsx presentations -->
+<!-- pdfstage: lokaler PDF-Player mit synchronisiertem Audio, Kapiteln und Volltextsuche -->
 <html lang="de">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PPSX Player</title>
+<title>pdfstage</title>
 <link rel="manifest" href="./manifest.json">
 <link rel="icon" type="image/svg+xml" href="./icon.svg">
 <style>
@@ -147,7 +147,7 @@
 <body>
 
 <header>
-  <div id="deckTitle" inert>PPSX Player</div>
+  <div id="deckTitle" inert>pdfstage</div>
   <div class="hdr-right">
     <div id="folie" class="hint" inert></div>
     <button id="openBtn" type="button" title="PDF-Datei öffnen">PDF öffnen</button>
@@ -157,8 +157,8 @@
 <div id="stage">
   <div id="openOverlay">
     <div class="open-card">
-      <div class="open-title">PPSX Magic-PDF Player</div>
-      <div class="open-sub">Lokale <code>.ppsx.pdf</code> (oder normale <code>.pdf</code>) öffnen oder hierher ziehen &mdash; 100&nbsp;% lokal im Browser.</div>
+      <div class="open-title">pdfstage</div>
+      <div class="open-sub">Lokale <code>.pdf</code> (oder <code>.stage.pdf</code> mit eingebettetem Audio) öffnen oder hierher ziehen &mdash; 100&nbsp;% lokal im Browser.</div>
       <button id="openHeroBtn" type="button">PDF öffnen &hellip;</button>
     </div>
   </div>
@@ -1028,7 +1028,7 @@ function initAudioEngine() {
   audio.addEventListener("pause", function () { if (playBtn && playBtn.firstElementChild) playBtn.firstElementChild.textContent = "\u25B6"; });
   audio.addEventListener("error", function () {
     if (!aktuelleAudioUrl) return;
-    if (folieEl) folieEl.textContent = "Audio kann in diesem Browser nicht abgespielt werden - bitte die MP4-Version nutzen.";
+    if (folieEl) folieEl.textContent = "Audio kann in diesem Browser nicht abgespielt werden (Format nicht unterstützt).";
   });
 }
 
@@ -1491,6 +1491,8 @@ document.addEventListener("keydown", function (e) {
     }
     else if (e.key === "PageUp") { e.preventDefault(); jump(cur > 0 ? cur - 1 : 0); }
     else if (e.key === "PageDown") { e.preventDefault(); jump(cur + 1); }
+    else if (e.key === "Home") { e.preventDefault(); jump(0); }
+    else if (e.key === "End") { e.preventDefault(); jump((STARTS.length || total) - 1); }
     else if (e.code === "Space") { e.preventDefault(); if (spieltGewollt) pauseAudio(); else playAudio(); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setVol(vol + 0.05); }
     else if (e.key === "ArrowDown") { e.preventDefault(); setVol(vol - 0.05); }
@@ -1547,6 +1549,62 @@ function findeAttachment(atts, name) {
   return null;
 }
 
+function detectAudioMime(filename, bytes, explicitMime) {
+  if (typeof explicitMime === "string" && explicitMime.trim()) {
+    return explicitMime.trim();
+  }
+  const lower = String(filename || "").trim().toLowerCase();
+  const dot = lower.lastIndexOf(".");
+  const ext = dot >= 0 ? lower.slice(dot) : "";
+  switch (ext) {
+    case ".opus":
+    case ".ogg":
+    case ".oga":
+      return "audio/ogg";
+    case ".mp3":
+      return "audio/mpeg";
+    case ".m4a":
+    case ".mp4":
+      return "audio/mp4";
+    case ".wav":
+      return "audio/wav";
+    case ".webm":
+    case ".weba":
+      return "audio/webm";
+    case ".flac":
+      return "audio/flac";
+    case ".aac":
+      return "audio/aac";
+  }
+  const b = bytes instanceof Uint8Array ? bytes : (bytes ? new Uint8Array(bytes) : new Uint8Array(0));
+  if (b.length >= 4 && b[0] === 0x4F && b[1] === 0x67 && b[2] === 0x67 && b[3] === 0x53) {
+    return "audio/ogg";
+  }
+  if (b.length >= 3 && b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) {
+    return "audio/mpeg";
+  }
+  if (b.length >= 2 && b[0] === 0xFF && (b[1] & 0xE0) === 0xE0) {
+    return "audio/mpeg";
+  }
+  if (b.length >= 12 &&
+      b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+      b[8] === 0x57 && b[9] === 0x41 && b[10] === 0x56 && b[11] === 0x45) {
+    return "audio/wav";
+  }
+  if (b.length >= 4 && b[0] === 0x66 && b[1] === 0x4C && b[2] === 0x61 && b[3] === 0x43) {
+    return "audio/flac";
+  }
+  if (b.length >= 8 && b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) {
+    return "audio/mp4";
+  }
+  if (b.length >= 4 && b[0] === 0x1A && b[1] === 0x45 && b[2] === 0xDF && b[3] === 0xA3) {
+    return "audio/webm";
+  }
+  return "";
+}
+
+window.detectAudioMime = detectAudioMime;
+
 async function loadPdfBytes(pdfBytes, fallbackTitle) {
   const myToken = ++loadToken;
   document.body.classList.remove("fehler");
@@ -1595,7 +1653,7 @@ async function loadPdfBytes(pdfBytes, fallbackTitle) {
     if (myToken !== loadToken) return;
 
     let meta = null;
-    const metaAtt = findeAttachment(atts, "ppsx.json");
+    const metaAtt = findeAttachment(atts, "pdfstage.json");
     if (metaAtt && metaAtt.content) {
       try {
         meta = JSON.parse(new TextDecoder().decode(metaAtt.content));
@@ -1609,7 +1667,7 @@ async function loadPdfBytes(pdfBytes, fallbackTitle) {
       nextHasAudio = true;
     }
 
-    const title = (meta && meta.title) ? String(meta.title) : (fallbackTitle || "PPSX Player");
+    const title = (meta && meta.title) ? String(meta.title) : (fallbackTitle || "pdfstage");
     if (deckTitleEl) deckTitleEl.textContent = title;
     if (!IS_EMBEDDED) document.title = title;
 
@@ -1621,7 +1679,8 @@ async function loadPdfBytes(pdfBytes, fallbackTitle) {
       renderLeiste(true);
       if (audioAtt && audioAtt.content) {
         const alteUrl = aktuelleAudioUrl;
-        const blob = new Blob([audioAtt.content], { type: "audio/ogg" });
+        const audioMime = detectAudioMime(audioName, audioAtt.content, meta && meta.audioMime);
+        const blob = audioMime ? new Blob([audioAtt.content], { type: audioMime }) : new Blob([audioAtt.content]);
         aktuelleAudioUrl = URL.createObjectURL(blob);
         audio.src = aktuelleAudioUrl;
         audio.playbackRate = 1;
@@ -1682,7 +1741,7 @@ if (IS_EMBEDDED) {
     if (!file) return;
     try {
       const buf = await file.arrayBuffer();
-      const base = file.name.replace(/\.ppsx\.pdf$/i, "").replace(/\.pptx\.pdf$/i, "").replace(/\.pdf$/i, "");
+      const base = file.name.replace(/\.(pdfstage|stage)\.pdf$/i, "").replace(/\.pdf$/i, "");
       await loadPdfBytes(new Uint8Array(buf), base || file.name);
     } catch (e) {
       showErr("Datei: " + e.message);

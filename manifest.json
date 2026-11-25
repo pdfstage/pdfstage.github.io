@@ -1,7 +1,7 @@
 {
-  "name": "PPSX Magic-PDF Player",
-  "short_name": "PPSX Player",
-  "description": "Lokaler Folien- und Audio-Player für PPSX Magic-PDFs",
+  "name": "pdfstage",
+  "short_name": "pdfstage",
+  "description": "Lokaler PDF-Player mit synchronisiertem Audio, Kapiteln und Volltextsuche",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

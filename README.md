@@ -92,6 +92,7 @@ Appending the `/EmbeddedFiles` tree and streams via a standard PDF incremental u
     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "bytes": 110729625,
     "convertedAt": "2026-11-25T18:30:00Z",
+    "pdfstageVersion": "0.8.1",
     "hiddenIncluded": false,
     "silentSeconds": 5,
     "tailSilence": 1.5
@@ -122,6 +123,7 @@ All fields inside `provenance` are optional (producers may omit them or include 
 | `sha256` | string | Lowercase hex SHA-256 digest of the original source file. |
 | `bytes` | integer | File size of the original source file in bytes. |
 | `convertedAt` | string | Conversion timestamp in RFC 3339 / ISO 8601 UTC format. |
+| `pdfstageVersion` | string | SemVer of the `pdfstage` web/spec release (e.g. `"0.8.1"`) that produced the file. |
 | `hiddenIncluded` | boolean | Whether hidden slides from the source deck were included in the PDF. |
 | `silentSeconds` | number | Synthetic duration (in seconds) assigned to slides without recorded narration. |
 | `tailSilence` | number | Trailing silence padding (in seconds) appended after narration segments. |
@@ -176,7 +178,7 @@ pdfcpu attachments extract deck.pdf ./extracted/
 
 ## Conformance Test Suite
 
-The browser PDF engine ([`cast/pdf-attach.js`](./cast/pdf-attach.js)) and any compatible external PDF attachment producer can be validated against the language-neutral conformance suite under [`test/conformance/`](./test/conformance/):
+The `pdfstage` web player, browser packer (`/cast/`), and [`test/conformance/`](./test/conformance/) are the canonical reference specification (ground truth) for `.stage.pdf` producers. Any compatible producer can be validated against the language-neutral conformance suite under [`test/conformance/`](./test/conformance/):
 
 - `test/conformance/fixtures/` — 10 deterministic PDF fixtures covering classic xref, `/Rotate 90` + OCGs, `/ObjStm` + XRef streams, multi-revision viewer annotations, foreign attachments + `/Dests`, synthetic linearized PDFs, single-revision full-save PDFs, and digitally signed PDFs.
 - `test/conformance/cases.json` — 11 declarative multi-step specification cases (generated deterministically by `test/conformance/generate-fixtures.mjs`).

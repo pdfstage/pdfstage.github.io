@@ -171,6 +171,7 @@ console.log(`All ${passed}/${corpus.cases.length} shared conformance cases passe
 const rootDir = path.resolve(__dirname, '../..');
 const swSrc = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
 const pwaSrc = fs.readFileSync(path.join(rootDir, 'pwa.js'), 'utf8');
+const castJsSrc = fs.readFileSync(path.join(rootDir, 'cast/cast.js'), 'utf8');
 const playerHtml = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
 const castHtml = fs.readFileSync(path.join(rootDir, 'cast/index.html'), 'utf8');
 
@@ -182,6 +183,10 @@ assert.ok(swSrc.includes('`pdfstage-v${APP_VERSION}`'), 'sw.js CACHE_NAME must r
 const pwaVerMatch = pwaSrc.match(/var APP_VERSION = ["'](\d+\.\d+\.\d+)["'];/);
 assert.ok(pwaVerMatch, 'pwa.js must define SemVer APP_VERSION');
 assert.equal(pwaVerMatch[1], swVer, 'pwa.js APP_VERSION must match sw.js APP_VERSION');
+
+const castVerMatch = castJsSrc.match(/export const PDFSTAGE_VERSION = ['"](\d+\.\d+\.\d+)['"];/);
+assert.ok(castVerMatch, 'cast/cast.js must export SemVer PDFSTAGE_VERSION');
+assert.equal(castVerMatch[1], swVer, 'cast/cast.js PDFSTAGE_VERSION must match sw.js APP_VERSION');
 
 const expectedBadge = `data-app-version>v${swVer}<`;
 assert.ok(playerHtml.includes(expectedBadge), `index.html must contain ${expectedBadge}`);

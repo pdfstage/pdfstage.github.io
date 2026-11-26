@@ -10,7 +10,12 @@ import {
 } from './pdf-attach.js';
 import { buildStoreZip } from './zip-store.js';
 
-export const PDFSTAGE_VERSION = '0.8.2';
+export const PDFSTAGE_VERSION = '0.8.3';
+
+export function toPdfstageSpecVersion(semver) {
+  const m = String(semver || '').match(/^(\d+\.\d+)/);
+  return m ? m[1] : String(semver || '');
+}
 
 const utf8Encoder = new TextEncoder();
 const utf8Decoder = new TextDecoder();
@@ -233,7 +238,9 @@ export async function castPair({
   if (deckSha256) provenance.sha256 = deckSha256;
   if (deckFile.size > 0) provenance.bytes = deckFile.size;
   provenance.convertedAt = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
-  const pdfstageVersion = (globalThis.pdfstagePwa && globalThis.pdfstagePwa.APP_VERSION) || PDFSTAGE_VERSION;
+  const pdfstageVersion = toPdfstageSpecVersion(
+    (globalThis.pdfstagePwa && globalThis.pdfstagePwa.APP_VERSION) || PDFSTAGE_VERSION,
+  );
   if (pdfstageVersion) provenance.pdfstageVersion = pdfstageVersion;
   if (includeHidden) provenance.hiddenIncluded = true;
   if (silentSeconds > 0) provenance.silentSeconds = silentSeconds;

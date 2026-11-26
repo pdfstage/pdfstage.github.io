@@ -1,4 +1,4 @@
-const APP_VERSION = '0.8.2';
+const APP_VERSION = '0.8.3';
 const CACHE_NAME = `pdfstage-v${APP_VERSION}`;
 const SHELL_ASSETS = [
   './',

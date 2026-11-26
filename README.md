@@ -92,7 +92,7 @@ Appending the `/EmbeddedFiles` tree and streams via a standard PDF incremental u
     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "bytes": 110729625,
     "convertedAt": "2026-11-25T18:30:00Z",
-    "pdfstageVersion": "0.8.2",
+    "pdfstageVersion": "0.8",
     "hiddenIncluded": false,
     "silentSeconds": 5,
     "tailSilence": 1.5
@@ -123,7 +123,7 @@ All fields inside `provenance` are optional (producers may omit them or include 
 | `sha256` | string | Lowercase hex SHA-256 digest of the original source file. |
 | `bytes` | integer | File size of the original source file in bytes. |
 | `convertedAt` | string | Conversion timestamp in RFC 3339 / ISO 8601 UTC format. |
-| `pdfstageVersion` | string | SemVer of the `pdfstage` web/spec release (e.g. `"0.8.2"`) that produced the file. |
+| `pdfstageVersion` | string | `MAJOR.MINOR` spec compatibility line (e.g. `"0.8"`) of the `pdfstage` web/spec release that produced the file; `PATCH` releases (e.g. `0.8.2` → `0.8.3`) are player/UI-only and keep the container spec unchanged. |
 | `hiddenIncluded` | boolean | Whether hidden slides from the source deck were included in the PDF. |
 | `silentSeconds` | number | Synthetic duration (in seconds) assigned to slides without recorded narration. |
 | `tailSilence` | number | Trailing silence padding (in seconds) appended after narration segments. |

@@ -187,6 +187,7 @@ assert.equal(pwaVerMatch[1], swVer, 'pwa.js APP_VERSION must match sw.js APP_VER
 const castVerMatch = castJsSrc.match(/export const PDFSTAGE_VERSION = ['"](\d+\.\d+\.\d+)['"];/);
 assert.ok(castVerMatch, 'cast/cast.js must export SemVer PDFSTAGE_VERSION');
 assert.equal(castVerMatch[1], swVer, 'cast/cast.js PDFSTAGE_VERSION must match sw.js APP_VERSION');
+assert.ok(castJsSrc.includes('toPdfstageSpecVersion('), 'cast/cast.js must embed MAJOR.MINOR spec version via toPdfstageSpecVersion');
 
 const expectedBadge = `data-app-version>v${swVer}<`;
 assert.ok(playerHtml.includes(expectedBadge), `index.html must contain ${expectedBadge}`);

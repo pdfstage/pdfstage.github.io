@@ -10,7 +10,7 @@ import {
 } from './pdf-attach.js';
 import { buildStoreZip } from './zip-store.js';
 
-export const PDFSTAGE_VERSION = '0.8.1';
+export const PDFSTAGE_VERSION = '0.8.2';
 
 const utf8Encoder = new TextEncoder();
 const utf8Decoder = new TextDecoder();

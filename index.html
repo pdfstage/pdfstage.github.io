@@ -165,7 +165,7 @@
 <body>
 
 <header>
-  <div class="hdr-left" inert><span class="brand">pdfstage</span><span class="app-ver" data-app-version>v0.8.1</span></div>
+  <div class="hdr-left" inert><span class="brand">pdfstage</span><span class="app-ver" data-app-version>v0.8.2</span></div>
   <div id="deckTitle" inert></div>
   <div class="hdr-right">
     <div id="folie" class="hint" inert></div>
@@ -1018,7 +1018,10 @@ async function show(i, vomSuchen) {
   }
 }
 
-let audio = null, actx = null, gainNode = null, vol = 1, toastTimer = null;
+let audio = null, actx = null, gainNode = null, boostAttached = false, vol = 1, toastTimer = null;
+const IS_WEBKIT = typeof navigator !== "undefined" &&
+  /AppleWebKit/i.test(navigator.userAgent || "") &&
+  !/Chrome|Chromium|CriOS|Edg|EdgiOS|OPR|FxiOS|Firefox/i.test(navigator.userAgent || "");
 let geladenBis = 0;
 let aktuelleAudioUrl = "";
 let spieltGewollt = false;
@@ -1031,32 +1034,109 @@ let zoomHideTimer = null;
 let touchInLens = false;
 let lensListenersBound = false;
 
-function initAudioEngine() {
-  if (audio) return;
-  audio = new Audio();
-  audio.preload = "auto";
-  audio.preservesPitch = true;
-  audio.webkitPreservesPitch = true;
-
-  try {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (AC) {
-      actx = new AC();
-      gainNode = actx.createGain();
-      gainNode.gain.value = 1;
-      actx.createMediaElementSource(audio).connect(gainNode).connect(actx.destination);
-    }
-  } catch (e) { actx = null; gainNode = null; }
-
-  audio.addEventListener("timeupdate", tick);
-  audio.addEventListener("loadedmetadata", function () { tick(); updateKapitelStriche(); });
-  audio.addEventListener("progress", updateLadebalken);
-  audio.addEventListener("play", function () { if (playBtn && playBtn.firstElementChild) playBtn.firstElementChild.textContent = "\u23F8"; });
-  audio.addEventListener("pause", function () { if (playBtn && playBtn.firstElementChild) playBtn.firstElementChild.textContent = "\u25B6"; });
-  audio.addEventListener("error", function () {
-    if (!aktuelleAudioUrl) return;
+function createAudioElement() {
+  const el = new Audio();
+  el.preload = "auto";
+  el.preservesPitch = true;
+  el.webkitPreservesPitch = true;
+  el.addEventListener("timeupdate", function () { if (el === audio) tick(); });
+  el.addEventListener("loadedmetadata", function () {
+    if (el !== audio) return;
+    tick();
+    updateKapitelStriche();
+  });
+  el.addEventListener("progress", function () { if (el === audio) updateLadebalken(); });
+  el.addEventListener("play", function () {
+    if (el === audio && playBtn && playBtn.firstElementChild) playBtn.firstElementChild.textContent = "\u23F8";
+  });
+  el.addEventListener("pause", function () {
+    if (el === audio && playBtn && playBtn.firstElementChild) playBtn.firstElementChild.textContent = "\u25B6";
+  });
+  el.addEventListener("error", function () {
+    if (el !== audio || !aktuelleAudioUrl) return;
     if (folieEl) folieEl.textContent = "Audio kann in diesem Browser nicht abgespielt werden (Format nicht unterstützt).";
   });
+  return el;
+}
+
+function attachBoostGraph() {
+  if (!audio || boostAttached) return;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    actx = new AC();
+    gainNode = actx.createGain();
+    gainNode.gain.value = vol > 1 ? vol : 1;
+    actx.createMediaElementSource(audio).connect(gainNode).connect(actx.destination);
+    boostAttached = true;
+    resumeAudio();
+  } catch (e) {
+    actx = null;
+    gainNode = null;
+    boostAttached = false;
+  }
+}
+
+function detachBoostGraph() {
+  if (!boostAttached) return;
+  const oldEl = audio;
+  const wasPlaying = Boolean(oldEl && (!oldEl.paused || spieltGewollt));
+  const prevTime = (oldEl && isFinite(oldEl.currentTime)) ? oldEl.currentTime : 0;
+  const prevRate = (oldEl && oldEl.playbackRate) || 1;
+  const prevMuted = Boolean(oldEl && oldEl.muted);
+  const srcUrl = aktuelleAudioUrl;
+
+  if (oldEl) {
+    try { oldEl.pause(); } catch (e) {}
+    try { oldEl.removeAttribute("src"); oldEl.load(); } catch (e) {}
+  }
+  const oldCtx = actx;
+  actx = null;
+  gainNode = null;
+  boostAttached = false;
+  if (oldCtx && typeof oldCtx.close === "function") {
+    try { oldCtx.close(); } catch (e) {}
+  }
+
+  const fresh = createAudioElement();
+  audio = fresh;
+  fresh.muted = prevMuted;
+  fresh.volume = Math.min(1, vol);
+  fresh.playbackRate = prevRate;
+
+  if (srcUrl) {
+    fresh.src = srcUrl;
+    const restorePos = function () {
+      if (audio !== fresh) return;
+      if (prevTime > 0) {
+        try { fresh.currentTime = prevTime; } catch (e) {}
+      }
+      fresh.playbackRate = prevRate;
+    };
+    if (fresh.readyState >= 1) {
+      restorePos();
+    } else {
+      fresh.addEventListener("loadedmetadata", restorePos, { once: true });
+    }
+    if (wasPlaying && spieltGewollt) {
+      const p = fresh.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(function (err) {
+          if (audio !== fresh) return;
+          spieltGewollt = false;
+          if (playBtn && playBtn.firstElementChild) playBtn.firstElementChild.textContent = "\u25B6";
+          if (err && err.name === "NotAllowedError") {
+            toast("Bitte Leertaste oder Play dr\u00fccken", 3500, false);
+          }
+        });
+      }
+    }
+  }
+}
+
+function initAudioEngine() {
+  if (audio) return;
+  audio = createAudioElement();
 }
 
 function effektiveDauer() {
@@ -1249,12 +1329,26 @@ function toast(msg, dauer, istWarn) {
   toastTimer = setTimeout(function () { t.style.opacity = "0"; }, typeof dauer === "number" ? dauer : 1100);
 }
 function resumeAudio() {
-  if (actx && actx.state === "suspended") actx.resume();
+  if (typeof navigator !== "undefined" && navigator.audioSession) {
+    try { navigator.audioSession.type = "playback"; } catch (e) {}
+  }
+  if (actx && actx.state !== "running") {
+    try { actx.resume(); } catch (e) {}
+  }
 }
 function applyVol() {
   if (!audio) return;
-  audio.volume = Math.min(1, vol);
-  if (gainNode) gainNode.gain.value = vol > 1 ? vol : 1;
+  if (vol > 1) {
+    audio.volume = 1;
+    attachBoostGraph();
+    if (gainNode) gainNode.gain.value = vol;
+    resumeAudio();
+  } else if (IS_WEBKIT && boostAttached) {
+    detachBoostGraph();
+  } else {
+    audio.volume = Math.min(1, vol);
+    if (gainNode) gainNode.gain.value = 1;
+  }
 }
 function playAudio() {
   if (!audio) return;
@@ -1764,6 +1858,10 @@ async function loadPdfBytes(pdfBytes, fallbackTitle, sourceInfo, restoreState) {
       renderLeiste(true);
       if (audioAtt && audioAtt.content) {
         const alteUrl = aktuelleAudioUrl;
+        if (IS_WEBKIT && boostAttached && vol <= 1) {
+          aktuelleAudioUrl = "";
+          detachBoostGraph();
+        }
         const audioMime = detectAudioMime(audioName, audioAtt.content, meta && meta.audioMime);
         const blob = audioMime ? new Blob([audioAtt.content], { type: audioMime }) : new Blob([audioAtt.content]);
         aktuelleAudioUrl = URL.createObjectURL(blob);
@@ -1784,8 +1882,12 @@ async function loadPdfBytes(pdfBytes, fallbackTitle, sourceInfo, restoreState) {
       if (audio) {
         const alteUrl = aktuelleAudioUrl;
         aktuelleAudioUrl = "";
-        audio.removeAttribute("src");
-        try { audio.load(); } catch (e) {}
+        if (boostAttached) {
+          detachBoostGraph();
+        } else {
+          audio.removeAttribute("src");
+          try { audio.load(); } catch (e) {}
+        }
         if (alteUrl) URL.revokeObjectURL(alteUrl);
       }
       geladenBis = 0;

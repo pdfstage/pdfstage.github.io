@@ -151,10 +151,10 @@ All fields inside `provenance` are optional (producers may omit them or include 
 
 ### 4. Viewer Hint Overlay (OCG)
 
-When embedding narration audio, `/cast/` (and compatible producers) add a non-printable hint pill in the top-right corner of Page 1 (`Enthält Audio für pdfstage.github.io`) for external PDF viewers while hiding it automatically inside `pdfstage` itself:
+When embedding narration audio, `/cast/` (and compatible producers) add a non-printable hint pill in the top-right corner of Page 1 (`Enthält Audio für pdfstage.github.io`) for external PDF viewers while hiding it automatically inside `pdfstage` itself when embedded audio is present (and warning the user if a file retains the hint annotation after attachments or audio were stripped by another PDF tool, including the minimum expected PDF size stored in the stamp's `/Contents`):
 
 - Registered as an Optional Content Group (`pdfstage-hint`) under `/Catalog` → `/OCProperties` (`/ViewState /ON`, `/PrintState /OFF`, plus `/PageMode /UseAttachments` when unset or `/UseNone`).
-- Positioned relative to Page 1's visible `/CropBox` (fallback `/MediaBox`) taking `/Rotate` into account, backed by a `/Stamp` annotation (`pdfstage-hint-stamp`), a clickable `/URI` link (`pdfstage-hint-link` → `https://pdfstage.github.io/`), and a `/SetOCGState` close button (`pdfstage-hint-close`).
+- Positioned relative to Page 1's visible `/CropBox` (fallback `/MediaBox`) taking `/Rotate` into account, backed by a `/Stamp` annotation (`pdfstage-hint-stamp`, carrying `/Contents` with `pdfstage.github.io` and `Original mind. <size>`), a clickable `/URI` link (`pdfstage-hint-link` → `https://pdfstage.github.io/`), and a `/SetOCGState` close button (`pdfstage-hint-close`).
 - Idempotent on re-pack: existing user annotations and custom OCGs are merged and preserved without duplicating hint layers.
 
 ---

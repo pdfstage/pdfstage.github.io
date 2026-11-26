@@ -1148,6 +1148,16 @@ const HINT_URI = 'https://pdfstage.github.io/';
 // WinAnsiEncoding escapes: \344 = 'ä', \374 = 'ü'
 const HINT_TEXT_WINANSI = 'Enth\\344lt Audio f\\374r pdfstage.github.io';
 
+function formatHintMinSize(bytes) {
+  const n = Math.max(0, Number(bytes) || 0);
+  if (n < 1024) return `${Math.floor(n)} B`;
+  if (n < 1024 * 1024) return `${Math.floor(n / 1024)} KB`;
+  const tenths = Math.floor((n * 10) / (1024 * 1024));
+  const whole = Math.floor(tenths / 10);
+  const frac = tenths % 10;
+  return `${whole},${frac} MB`;
+}
+
 function pdfNumberVal(val) {
   if (!val) return null;
   if (val.kind === 'int') return val.intVal;
@@ -1528,7 +1538,8 @@ async function buildAttachPlan(pdfBytes, files, options = {}) {
               } catch { /* keep unknown annot */ }
               if (nm === `${HINT_PREFIX}-stamp`) {
                 hasHintStamp = true;
-                stampContentsMatches = contents === expectedStampText;
+                stampContentsMatches = contents === expectedStampText ||
+                  contents.startsWith(`${expectedStampText}; Original mind. `);
               } else if (nm === `${HINT_PREFIX}-link`) {
                 hasHintLink = true;
               } else if (nm === `${HINT_PREFIX}-close`) {
@@ -2090,8 +2101,9 @@ export async function attachFilesToPdfWithReport(pdfBytes, files, options = {}) 
 
     const stampObj = nextObj++;
     newXRefEntries.set(stampObj, { typ: 1, f1: out.length, f2: 0 });
+    const hintContents = `${HINT_TEXT_WINANSI}; Original mind. ${formatHintMinSize(out.length)}`;
     out.pushAscii(
-      `${stampObj} 0 obj\n<< /Type /Annot /Subtype /Stamp /Rect ${fmtRect(stampRect)} /F 0 /Border [0 0 0] /NM (${HINT_PREFIX}-stamp) /Contents (${HINT_TEXT_WINANSI}) /AP << /N ${apObj} 0 R >> /OC ${ocgObjNum} 0 R >>\nendobj\n`,
+      `${stampObj} 0 obj\n<< /Type /Annot /Subtype /Stamp /Rect ${fmtRect(stampRect)} /F 0 /Border [0 0 0] /NM (${HINT_PREFIX}-stamp) /Contents (${hintContents}) /AP << /N ${apObj} 0 R >> /OC ${ocgObjNum} 0 R >>\nendobj\n`,
     );
 
     const uriObj = nextObj++;

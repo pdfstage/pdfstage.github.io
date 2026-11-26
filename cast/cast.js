@@ -10,7 +10,7 @@ import {
 } from './pdf-attach.js';
 import { buildStoreZip } from './zip-store.js';
 
-export const PDFSTAGE_VERSION = '0.8.6';
+export const PDFSTAGE_VERSION = '0.8.7';
 
 export function toPdfstageSpecVersion(semver) {
   const m = String(semver || '').match(/^(\d+\.\d+)/);

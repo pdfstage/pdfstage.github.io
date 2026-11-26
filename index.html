@@ -11,7 +11,7 @@
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
-  #openOverlay[hidden], #wrap[hidden], #fileInput[hidden], #updateBtn[hidden], #shortcutsModal[hidden], #caret[hidden], #resumeCard[hidden] { display: none !important; }
+  #openOverlay[hidden], #wrap[hidden], #fileInput[hidden], #updateBtn[hidden], #shortcutsModal[hidden], #caret[hidden], #resumeCard[hidden], #audioLostBanner[hidden] { display: none !important; }
   body { margin:0; background:#111; color:#eee; font-family:system-ui,'Segoe UI',sans-serif; display:flex; flex-direction:column; height:100vh; }
   header { padding:10px 16px 4px; font-size:14px; color:#ccc; display:grid; grid-template-columns:minmax(max-content, 1fr) minmax(0, auto) minmax(max-content, 1fr); align-items:center; gap:12px; }
   .hdr-left { display:flex; align-items:center; gap:7px; justify-self:start; white-space:nowrap; }
@@ -167,6 +167,12 @@
   #helpBtn { width:30px; height:30px; border-radius:50%; padding:0; display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:13.5px; line-height:1; }
   #toast { position:fixed; left:50%; top:70px; transform:translateX(-50%); background:#000c; color:#fff; padding:8px 18px; border-radius:8px; font-size:15px; opacity:0; transition:opacity .25s; pointer-events:none; z-index:40; }
   #toast.warn { background:#2b1519f2; border:1px solid #ff4d6d; color:#ffd6de; }
+  #audioLostBanner { position:absolute; top:12px; left:50%; transform:translateX(-50%); width:max-content; max-width:min(680px, calc(100% - 24px)); z-index:25; background:#2b1519f5; border:1px solid #ff4d6d; color:#ffd6de; border-radius:10px; padding:10px 14px; box-shadow:0 8px 24px #000b; display:flex; align-items:flex-start; gap:12px; }
+  .alb-body { flex:1; min-width:0; }
+  .alb-title { font-size:13.5px; font-weight:600; color:#ffe4e9; line-height:1.35; }
+  .alb-sub { font-size:12.5px; color:#ffc2cd; margin-top:2px; line-height:1.4; }
+  #audioLostClose { flex:0 0 auto; width:24px; height:24px; border-radius:50%; padding:0; font-size:15px; line-height:1; background:transparent; border:1px solid #ff4d6d66; color:#ffd6de; display:inline-flex; align-items:center; justify-content:center; }
+  #audioLostClose:hover { background:#ff4d6d33; }
   #hintline { position:absolute; left:0; right:0; bottom:100%; text-align:center; padding:6px 16px 10px; line-height:1.9; pointer-events:none; background:linear-gradient(to top, #111 72%, #1110); }
   #hintline kbd, #btnTip kbd, #shortcutsModal kbd { background:#2a2d3a; border:1px solid #52586b; border-bottom-width:2px; border-radius:4px; padding:1px 6px; font-size:11.5px; font-family:inherit; color:#f3f4f6; line-height:1.25; }
   #btnTip { position:fixed; left:0; top:0; transform:translate(-50%, -100%); background:#161820f7; color:#eee; border:1px solid #3d4252; border-radius:7px; padding:5px 9px; font-size:12px; line-height:1.3; white-space:nowrap; pointer-events:none; opacity:0; transition:opacity .12s; z-index:60; box-shadow:0 6px 18px #000b; display:flex; align-items:center; gap:7px; }
@@ -198,7 +204,7 @@
 <body>
 
 <header>
-  <div class="hdr-left" inert><span class="brand">pdfstage</span><span class="app-ver" data-app-version>v0.8.6</span></div>
+  <div class="hdr-left" inert><span class="brand">pdfstage</span><span class="app-ver" data-app-version>v0.8.7</span></div>
   <div id="deckTitle" inert></div>
   <div class="hdr-right">
     <div id="folie" class="hint" inert></div>
@@ -229,6 +235,13 @@
     <canvas id="cv" width="1920" height="1080"></canvas>
     <div id="caret" aria-hidden="true" hidden></div>
     <div id="tl"></div>
+  </div>
+  <div id="audioLostBanner" hidden inert role="alert">
+    <div class="alb-body">
+      <div id="audioLostTitle" class="alb-title"></div>
+      <div id="audioLostDetail" class="alb-sub"></div>
+    </div>
+    <button id="audioLostClose" type="button" aria-label="Hinweis schlie&szlig;en" title="Hinweis schlie&szlig;en"><span inert>&times;</span></button>
   </div>
 </div>
 <div id="leiste">
@@ -1615,6 +1628,10 @@ function createAudioElement() {
   el.addEventListener("error", function () {
     if (el !== audio || !aktuelleAudioUrl) return;
     if (folieEl) folieEl.textContent = "Audio kann in diesem Browser nicht abgespielt werden (Format nicht unterstützt).";
+    showAudioLostBanner(
+      "Eingebettetes Audio nicht abspielbar",
+      "Die eingebettete Audiospur ist besch\u00e4digt oder wird von diesem Browser nicht unterst\u00fctzt \u2014 bitte Originaldatei verwenden."
+    );
   });
   return el;
 }
@@ -2511,8 +2528,62 @@ function waitForAudioReady(el) {
   });
 }
 
+const audioLostBannerEl = document.getElementById("audioLostBanner");
+const audioLostTitleEl = document.getElementById("audioLostTitle");
+const audioLostDetailEl = document.getElementById("audioLostDetail");
+const audioLostCloseBtn = document.getElementById("audioLostClose");
+
+function formatFileSizeDe(bytes) {
+  const n = Math.max(0, Number(bytes) || 0);
+  if (n < 1024) return Math.floor(n) + " B";
+  if (n < 1024 * 1024) return Math.floor(n / 1024) + " KB";
+  return (n / (1024 * 1024)).toFixed(1).replace(".", ",") + " MB";
+}
+
+function hideAudioLostBanner() {
+  if (!audioLostBannerEl) return;
+  audioLostBannerEl.hidden = true;
+  audioLostBannerEl.inert = true;
+}
+
+function showAudioLostBanner(titleText, detailText) {
+  if (!audioLostBannerEl) return;
+  if (audioLostTitleEl) audioLostTitleEl.textContent = titleText || "";
+  if (audioLostDetailEl) audioLostDetailEl.textContent = detailText || "";
+  audioLostBannerEl.hidden = false;
+  audioLostBannerEl.inert = false;
+}
+
+if (audioLostCloseBtn) audioLostCloseBtn.addEventListener("click", hideAudioLostBanner);
+
+async function inspectPdfstageHintOnPage1(doc) {
+  const res = { hasHintAnnot: false, minSizeHint: "" };
+  if (!doc || !doc.numPages) return res;
+  try {
+    const p1 = await doc.getPage(1);
+    const annots = await p1.getAnnotations({ intent: "display" });
+    if (!Array.isArray(annots)) return res;
+    for (let i = 0; i < annots.length; i++) {
+      const a = annots[i];
+      if (!a) continue;
+      const cStr = (a.contentsObj && typeof a.contentsObj.str === "string" ? a.contentsObj.str : "") ||
+        (typeof a.contents === "string" ? a.contents : "");
+      const urlStr = typeof a.url === "string" ? a.url : "";
+      if (cStr.indexOf("pdfstage.github.io") >= 0 || urlStr.indexOf("pdfstage.github.io") >= 0) {
+        res.hasHintAnnot = true;
+      }
+      if (!res.minSizeHint && cStr) {
+        const m = cStr.match(/mind\.\s*([0-9]+(?:[.,][0-9]+)?\s*(?:B|KB|MB|GB))/i);
+        if (m && m[1]) res.minSizeHint = m[1];
+      }
+    }
+  } catch (e) {}
+  return res;
+}
+
 async function loadPdfBytes(pdfBytes, fallbackTitle, sourceInfo, restoreState) {
   const myToken = ++loadToken;
+  hideAudioLostBanner();
   const srcBlob = (sourceInfo && sourceInfo.blob) || new Blob([pdfBytes], { type: "application/pdf" });
   const nextSource = {
     blob: srcBlob,
@@ -2577,6 +2648,7 @@ async function loadPdfBytes(pdfBytes, fallbackTitle, sourceInfo, restoreState) {
         meta = JSON.parse(new TextDecoder().decode(metaAtt.content));
       } catch (e) { meta = null; }
     }
+    const metaParseError = Boolean(metaAtt && metaAtt.content && !meta);
 
     const audioName = (meta && typeof meta.audio === "string") ? meta.audio.trim() : "";
     const audioAtt = audioName ? findeAttachment(atts, audioName) : null;
@@ -2643,6 +2715,7 @@ async function loadPdfBytes(pdfBytes, fallbackTitle, sourceInfo, restoreState) {
 
     pdfDoc = doc;
     currentOcConfig = null;
+    const hintOcgIds = [];
     try {
       if (typeof doc.getOptionalContentConfig === "function") {
         const ocConfig = await doc.getOptionalContentConfig();
@@ -2651,7 +2724,8 @@ async function loadPdfBytes(pdfBytes, fallbackTitle, sourceInfo, restoreState) {
           if (groups) {
             for (const [id, grp] of Object.entries(groups)) {
               if (grp && grp.name === "pdfstage-hint") {
-                ocConfig.setVisibility(id, false);
+                hintOcgIds.push(id);
+                if (nextHasAudio) ocConfig.setVisibility(id, false);
               }
             }
           }
@@ -2659,6 +2733,24 @@ async function loadPdfBytes(pdfBytes, fallbackTitle, sourceInfo, restoreState) {
         }
       }
     } catch (e) { currentOcConfig = null; }
+    if (!nextHasAudio) {
+      const hintInfo = await inspectPdfstageHintOnPage1(doc);
+      if (myToken !== loadToken) return;
+      if (hintOcgIds.length > 0 || hintInfo.hasHintAnnot || metaParseError || Boolean(audioName)) {
+        let detail;
+        if (metaParseError) {
+          detail = "Die eingebettete Steuerdatei (pdfstage.json) konnte nicht gelesen werden.";
+        } else if (audioName) {
+          detail = "Die referenzierte Audiodatei (\u201e" + audioName + "\u201c) fehlt im PDF oder ist leer.";
+        } else {
+          detail = "Der Audio-Hinweis ist vorhanden, aber die eingebetteten Audio-Anh\u00e4nge fehlen (oft nach \u201eSpeichern unter\u201c oder Bearbeiten in einem anderen PDF-Programm).";
+        }
+        if (hintInfo.minSizeHint) {
+          detail += " Original-PDF m\u00fcsste mind. " + hintInfo.minSizeHint + " gro\u00df sein (diese Datei: " + formatFileSizeDe(nextSource.size) + ").";
+        }
+        showAudioLostBanner("Gepacktes Audio verloren gegangen \u2014 bitte Originaldatei verwenden", detail);
+      }
+    }
     total = doc.numPages;
     if (slidebar) slidebar.max = total;
     if (openOverlayEl) openOverlayEl.hidden = true;

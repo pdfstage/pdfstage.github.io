@@ -3,6 +3,7 @@
 (function (global) {
   "use strict";
 
+  var APP_VERSION = "0.8.0";
   var HANDOFF_DB_NAME = "pdfstage-handoff";
   var HANDOFF_DB_VERSION = 1;
   var HANDOFF_STORE = "handoffs";
@@ -390,7 +391,24 @@
     };
   }
 
+  function renderVersionBadges() {
+    if (typeof document === "undefined") return;
+    var els = document.querySelectorAll("[data-app-version]");
+    for (var i = 0; i < els.length; i++) {
+      els[i].textContent = "v" + APP_VERSION;
+    }
+  }
+
+  if (typeof document !== "undefined") {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", renderVersionBadges, { once: true });
+    } else {
+      renderVersionBadges();
+    }
+  }
+
   global.pdfstagePwa = {
+    APP_VERSION: APP_VERSION,
     HANDOFF_DB_NAME: HANDOFF_DB_NAME,
     HANDOFF_STORE: HANDOFF_STORE,
     HANDOFF_SESSION_KEY: HANDOFF_SESSION_KEY,

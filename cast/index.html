@@ -30,8 +30,19 @@
     gap: 12px;
     flex-wrap: wrap;
   }
-  .brand { font-size: 15px; font-weight: 600; color: #f3f4f6; }
-  .brand span { color: #888; font-weight: 400; }
+  .brand { font-size: 15px; font-weight: 600; color: #f3f4f6; display: flex; align-items: center; gap: 7px; }
+  .brand-sub { color: #888; font-weight: 400; }
+  .app-ver {
+    font-size: 11.5px;
+    font-weight: 500;
+    color: #9aa3b2;
+    background: #1c1f29;
+    border: 1px solid #2e3342;
+    border-radius: 999px;
+    padding: 1px 7px;
+    letter-spacing: 0.01em;
+    font-variant-numeric: tabular-nums;
+  }
   .hdr-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .hdr-update {
     background: #29181d;
@@ -315,7 +326,7 @@
 <body>
 
 <header>
-  <div class="brand">pdfstage <span>/ cast</span></div>
+  <div class="brand">pdfstage <span class="brand-sub">/ cast</span><span class="app-ver" data-app-version>v0.8.0</span></div>
   <div class="hdr-right">
     <button id="updateBtn" class="hdr-update" type="button" hidden title="Neue App-Version laden">Update verfügbar – neu laden</button>
     <a class="hdr-link" href="https://github.com/pdfstage/pdfstage.github.io#readme" target="_blank" rel="noopener" title="Dokumentation &amp; Format-Spezifikation (README)">Docs</a>

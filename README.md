@@ -11,8 +11,8 @@ Slide-synced browser player for self-contained PDFs with embedded audio and timi
 - **Cross-slide native full-text search (`Ctrl+F`):** Renders aligned text layers for every slide using `hidden="until-found"` and `beforematch`, automatically jumping to the matching slide and syncing audio playback.
 - **Formatted text copy:** Preserves font family, bold, italic, and underline styling when copying text directly off a slide, with ink-fitted selection highlights.
 - **Precision timeline controls:** Chapter ticks on the seekbar, hover/touch zoom lens for dense decks, playback speed (`0.5×`–`3.0×` in `0.05×` steps) with both original and speed-adjusted timers, and up to `300%` volume boost via Web Audio API.
-- **Offline-first PWA:** Zero external runtime dependencies (bundles PDF.js and its worker inline), installable via Web App Manifest with OS `.pdf` file-handler integration (`launchQueue`), drag-and-drop, and offline caching.
-- **Zero-install browser packer (`/cast/`):** Create `.stage.pdf` files directly in the browser at [`/cast/`](https://pdfstage.github.io/cast/) by exporting slides as `.pdf` from PowerPoint and dropping `.ppsx`/`.pptx` + `.pdf` together — merges narration audio into Ogg Opus via Web Audio + WebCodecs without FFmpeg or uploads (supports multi-file batch pairing & ZIP download).
+- **Offline-first PWA:** Zero external runtime dependencies (bundles PDF.js and its worker inline), installable via Web App Manifest with OS `.pdf` file-handler integration (`launchQueue`), drag-and-drop, offline caching, and controlled Service Worker updates without progress loss.
+- **Zero-install browser packer (`/cast/`):** Create `.stage.pdf` files directly in the browser at [`/cast/`](https://pdfstage.github.io/cast/) by exporting slides as `.pdf` from PowerPoint and dropping `.ppsx`/`.pptx` + `.pdf` together — encodes narration into Ogg Opus via Web Audio + WebCodecs without FFmpeg or uploads, supports hash-based audio reuse / 0-byte no-op idempotency, and cleans up obsolete attachments without losing PDF annotations.
 
 ## Keyboard Shortcuts
 
@@ -26,6 +26,19 @@ Slide-synced browser player for self-contained PDFs with embedded audio and timi
 | **Audio** | `↑` / `↓` | Volume ±5% (0%–300%) |
 | **Audio** | `M` | Mute / unmute |
 | **Audio** | `+` / `-` / `0` | Playback speed ±0.05× / reset to 1× |
+
+---
+
+## Browser Packer (`/cast/`)
+
+[`pdfstage / cast`](https://pdfstage.github.io/cast/) converts `.ppsx` / `.pptx` narration tracks + PowerPoint-exported `.pdf` slides into self-contained `.stage.pdf` files **100% locally in the browser** (zero installation, no FFmpeg, no uploads):
+
+- **Workflow:** Export slides once from PowerPoint as `.pdf` (**PowerPoint → Datei → Öffnen → Exportieren als PDF** — note that double-clicking a `.ppsx` opens slideshow mode rather than the editor), then drag `.ppsx`/`.pptx` and `.pdf` together into `/cast/`. Multiple lecture pairs can be dropped at once; matching runs automatically by filename stem, with optional **All-as-ZIP** download and direct **Im Player öffnen** handoff.
+- **Configurable options:** Silent slide duration (`Stille-Folie`), trailing silence (`Endstille`), Opus bitrate (`24`/`32`/`48`/`64 kbps`), hidden-slide inclusion (with per-job auto-mismatch detection), viewer-only mode (`Ohne Audio`), and **Bestehende Anhänge** (`replace` / `ask` / `append`, persisted in `localStorage`).
+- **Smart re-packing & dead-attachment cleanup:**
+  - **Audio reuse & 0-byte no-op:** Compares `provenance.audioSourceSha256` + `audioSha256` and embedded attachment bytes (ignoring `convertedAt`). Unchanged audio skips WebCodecs re-encoding, and completely unchanged re-packs return the existing PDF byte-for-byte (`0 B` appended).
+  - **`replace` (default):** Before writing, inspects whether replacing/removing managed attachments (`audio.opus`, `pdfstage.json`) would leave orphaned dead bytes. When safe, removes old `pdfstage` revisions via **tail-truncation** — or via **revision-replay** (both classic xref and `/ObjStm` XRef streams) so viewer annotations added later to the `.stage.pdf` remain intact. Non-`pdfstage` attachments (e.g. handouts) and `/Catalog` `/Names` entries (e.g. `/Dests`) are preserved automatically.
+  - **`ask` & `append` + safe fallbacks:** `ask` shows a pre-run summary and interactive confirmation prompt with exact byte savings; `append` always keeps the previous PDF as an exact byte prefix. Encrypted PDFs, digitally signed PDFs (`/ByteRange` / `/Perms` / `SigFlags`), and single-revision full-save PDFs automatically fall back to `append` with a clear explanation.
 
 ---
 
@@ -75,7 +88,7 @@ Appending the `/EmbeddedFiles` tree and streams via a standard PDF incremental u
     "Summary & Reading List"
   ],
   "provenance": {
-    "sourceUrl": "[https://example.edu/courses/101/lecture-01.pptx](https://example.edu/courses/101/lecture-01.pptx)",
+    "sourceUrl": "https://example.edu/courses/101/lecture-01.pptx",
     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "bytes": 110729625,
     "convertedAt": "2026-11-25T18:30:00Z",
@@ -126,9 +139,39 @@ All fields inside `provenance` are optional (producers may omit them or include 
 - **Active Slide Resolution:** For playback position `t`, the player selects the highest index `i` where `t >= starts[i] - 0.05` (50 ms boundary tolerance), defaulting to `0`. Jumping to slide `i` seeks to `starts[i] + 0.001`.
 - **Viewer-Only Fallback:** If `pdfstage.json` is absent, `audio` is omitted, or the referenced attachment is missing/empty, `pdfstage` switches to viewer-only mode (slide navigation, chapter tooltips if `titles` exist, and full-text search).
 
+### 4. Viewer Hint Overlay (OCG)
+
+When embedding narration audio, both `/cast/` and the `assistant pdfstage` CLI add a non-printable hint pill in the top-right corner of Page 1 (`Enthält Audio für pdfstage.github.io`) for external PDF viewers while hiding it automatically inside `pdfstage` itself:
+
+- Registered as an Optional Content Group (`pdfstage-hint`) under `/Catalog` → `/OCProperties` (`/ViewState /ON`, `/PrintState /OFF`, plus `/PageMode /UseAttachments` when unset or `/UseNone`).
+- Positioned relative to Page 1's visible `/CropBox` (fallback `/MediaBox`) taking `/Rotate` into account, backed by a `/Stamp` annotation (`pdfstage-hint-stamp`), a clickable `/URI` link (`pdfstage-hint-link` → `https://pdfstage.github.io/`), and a `/SetOCGState` close button (`pdfstage-hint-close`).
+- Idempotent on re-pack: existing user annotations and custom OCGs are merged and preserved without duplicating hint layers.
+
 ---
 
 ## Building & Inspecting Compatible PDFs
+
+### Option A: Zero-install in the browser (`/cast/`)
+
+Open [`https://pdfstage.github.io/cast/`](https://pdfstage.github.io/cast/) and drop your PowerPoint-exported `.pdf` alongside the `.ppsx`/`.pptx`.
+
+### Option B: `assistant pdfstage` CLI
+
+The companion Go CLI (`tools/assistant/ppsx`) automates PowerPoint PDF export, FFmpeg Opus timeline encoding, SHA-256 audio reuse, viewer hint generation, and clean replacement of orphaned attachments:
+
+```bash
+# Export slides (if needed), encode audio, and build <Name>.stage.pdf
+assistant pdfstage lecture.ppsx
+
+# Reuse pre-exported PDF or pre-encoded audio, keep orphaned attachments or prompt interactively
+assistant pdfstage lecture.ppsx --pdf lecture.pdf --attach-mode replace   # default: tail-truncate / revision-replay
+assistant pdfstage lecture.ppsx --pdf lecture.pdf --attach-mode ask       # TTY prompt when old audio would remain
+assistant pdfstage lecture.ppsx --pdf lecture.pdf --attach-mode append    # preserve original PDF as exact byte prefix
+
+# Additional CLI options: --audio [path], --viewer, --hidden, --silent-seconds 5, --tail-silence 10, --mp4, --audio-files
+```
+
+### Option C: Generic `pdfcpu` prototyping
 
 For quick prototyping or inspection, [`pdfcpu`](https://pdfcpu.io/) can attach and extract embedded files:
 
@@ -143,7 +186,18 @@ pdfcpu attachments list deck.pdf
 pdfcpu attachments extract deck.pdf ./extracted/
 ```
 
-*(Note: Generic CLI tools may compress all attachments with `/FlateDecode` by default. For production pipelines with large decks, writing a minimal PDF incremental update keeps compressed audio streams raw while compressing `pdfstage.json` with `/FlateDecode`.)*
+*(Note: Generic CLI tools may compress all attachments with `/FlateDecode` by default. Using `/cast/` or `assistant pdfstage` writes minimal incremental updates with `audio.opus` stored raw and `pdfstage.json` compressed with `/FlateDecode`.)*
+
+---
+
+## Conformance Test Suite
+
+Both the browser PDF engine ([`cast/pdf-attach.js`](./cast/pdf-attach.js)) and the Go CLI writer (`tools/assistant/ppsx`) are verified against a shared conformance corpus under [`test/conformance/`](./test/conformance/):
+
+- `test/conformance/fixtures/` — 10 deterministic PDF fixtures covering classic xref, `/Rotate 90` + OCGs, `/ObjStm` + XRef streams, multi-revision viewer annotations, foreign attachments + `/Dests`, synthetic linearized PDFs, single-revision full-save PDFs, and digitally signed PDFs.
+- `test/conformance/cases.json` — 11 declarative multi-step specification cases (generated deterministically by `test/conformance/generate-fixtures.mjs`).
+- **JS runner:** `node test/conformance/run-js.mjs`
+- **Go & cross-interop runner:** `go test -v ./ppsx` (`TestSharedConformanceCorpus` + `TestCrossInteropJSAndGo`, which runs both `run-js.mjs` and Go→JS→Go / JS→Go→JS roundtrips).
 
 ---
 

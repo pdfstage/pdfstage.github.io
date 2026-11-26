@@ -211,6 +211,14 @@ export async function castPair({
   if (pdfPages !== null && pdfPages !== deck.slides.length) {
     warnings.push(`Seitenzahl weicht ab: ${deck.slides.length} Folien vs. ${pdfPages} PDF-Seiten.`);
   }
+  const prevDeckSha = typeof existingMeta?.provenance?.sha256 === 'string' ? existingMeta.provenance.sha256 : '';
+  if (prevDeckSha && deckSha256 && prevDeckSha !== deckSha256) {
+    const prevTitleNote = existingMeta.title ? ` (bisher: „${existingMeta.title}“)` : '';
+    const audioNote = reusedAudio
+      ? ' Tonspur unverändert, aber PDF-Folien prüfen.'
+      : ' PDF-Folien prüfen, ob sie zur neuen Präsentation passen.';
+    warnings.push(`Andere Quell-Präsentation als im bestehenden Stage-PDF (SHA-256 weicht ab${prevTitleNote}).${audioNote}`);
+  }
 
   const hasAudio = Boolean(audioResult.audioBytes && audioResult.audioBytes.length > 0);
   const provenance = {};
@@ -413,6 +421,7 @@ function initUI() {
   async function inspectJob(job) {
     if (!job.deckFile || !job.pdfFile) return;
     const token = ++job.inspectToken;
+    job.confirmedMismatch = false;
     job.inspecting = true;
     render();
     try {
@@ -426,6 +435,8 @@ function initUI() {
 
       let attachmentInfo = null;
       let attachmentPlan = null;
+      let sourceMismatch = '';
+      let sourceHashMatch = null;
       try {
         const existingAtts = await readPdfAttachments(pdfBytes);
         const rawMeta = existingAtts.get('pdfstage.json');
@@ -445,10 +456,23 @@ function initUI() {
               }
             }
           }
+          const prevDeckSha = typeof existingMeta?.provenance?.sha256 === 'string' ? existingMeta.provenance.sha256 : '';
+          if (prevDeckSha) {
+            const deckSha256 = await sha256Hex(new Uint8Array(await job.deckFile.arrayBuffer()));
+            sourceHashMatch = prevDeckSha === deckSha256;
+            if (!sourceHashMatch) {
+              const prevTitleNote = existingMeta.title ? ` (bisher: „${existingMeta.title}“)` : '';
+              sourceMismatch = audioUnchanged
+                ? `Andere Quell-Präsentation als im bestehenden Stage-PDF (SHA-256 weicht ab${prevTitleNote}) — Tonspur unverändert, aber PDF-Folien prüfen!`
+                : `Andere Quell-Präsentation als im bestehenden Stage-PDF (SHA-256 weicht ab${prevTitleNote}) — PDF-Folien prüfen!`;
+            }
+          }
           if (audioUnchanged) {
             attachmentInfo = {
               kind: 'unchanged-audio',
-              text: 'Bestehendes Stage-PDF · Tonspur unverändert (wird wiederverwendet)',
+              text: sourceHashMatch === true
+                ? 'Bestehendes Stage-PDF · Identische Präsentation & Tonspur (0 B Änderung)'
+                : 'Bestehendes Stage-PDF · Tonspur unverändert (wird wiederverwendet)',
             };
           } else if ((prevAudioBytes && prevAudioBytes.length > 0) || opts.viewerOnly) {
             const previewAtts = [
@@ -483,6 +507,8 @@ function initUI() {
         includeHiddenUsed: opts.includeHidden,
         attachmentInfo,
         attachmentPlan,
+        sourceMismatch,
+        sourceHashMatch,
       };
     } catch (err) {
       if (token !== job.inspectToken) return;
@@ -532,6 +558,7 @@ function initUI() {
           soloPaired: false,
           overrideHidden: null,
           overrideAttachMode: null,
+          confirmedMismatch: false,
           inspect: null,
           inspectError: '',
           inspecting: false,
@@ -563,6 +590,7 @@ function initUI() {
       target.inspect = null;
       target.inspectError = '';
       target.overrideAttachMode = null;
+      target.confirmedMismatch = false;
       target.pendingDecision = null;
       target.attachReport = null;
       target.soloPaired = false;
@@ -593,8 +621,16 @@ function initUI() {
     }
   }
 
+  function hasPageMismatch(job) {
+    return Boolean(job.inspect && job.inspect.pdfPages !== null && job.inspect.pdfPages !== job.inspect.slideCount);
+  }
+
+  function needsMismatchConfirm(job) {
+    return hasPageMismatch(job) && !job.confirmedMismatch;
+  }
+
   async function runJob(job) {
-    if (!job.deckFile || !job.pdfFile || job.status === 'running') return;
+    if (!job.deckFile || !job.pdfFile || job.status === 'running' || needsMismatchConfirm(job)) return;
     revokeJobUrl(job);
     job.status = 'running';
     job.error = '';
@@ -645,14 +681,23 @@ function initUI() {
     if (runningBatch) return;
     runningBatch = true;
     render();
+    let skippedMismatch = 0;
     try {
       for (const job of jobs) {
         if (job.deckFile && job.pdfFile && (job.status === 'ready' || job.status === 'error')) {
+          if (needsMismatchConfirm(job)) {
+            skippedMismatch++;
+            continue;
+          }
           await runJob(job);
         }
       }
     } finally {
       runningBatch = false;
+      if (skippedMismatch > 0) {
+        statusBanner.hidden = false;
+        statusBanner.textContent = `${skippedMismatch} Paar(e) wegen abweichender Folien-/PDF-Seitenzahl übersprungen — bitte einzeln prüfen oder über „Trotzdem erstellen“ starten.`;
+      }
       render();
     }
   }
@@ -745,7 +790,9 @@ function initUI() {
     const hasJobs = jobs.length > 0;
     actionsBar.hidden = !hasJobs;
 
-    const runnableCount = jobs.filter((j) => j.deckFile && j.pdfFile && (j.status === 'ready' || j.status === 'error')).length;
+    const runnableCount = jobs.filter((j) =>
+      j.deckFile && j.pdfFile && (j.status === 'ready' || j.status === 'error') && !needsMismatchConfirm(j),
+    ).length;
     const doneCount = jobs.filter((j) => j.status === 'done').length;
     runAllBtn.disabled = runningBatch || runnableCount === 0;
     runAllBtn.textContent = runningBatch ? 'Konvertierung läuft …' : (runnableCount > 1 ? `Alle erstellen (${runnableCount})` : 'Erstellen');
@@ -808,10 +855,11 @@ function initUI() {
         metaLine.textContent = `${job.inspect.slideCount} Folien · ${job.inspect.audioTracks} Tonspuren · ${pagesTxt} PDF-Seiten`;
         info.appendChild(metaLine);
 
-        if (job.inspect.pdfPages !== null && job.inspect.pdfPages !== job.inspect.slideCount) {
+        if (hasPageMismatch(job)) {
           const warnBox = document.createElement('div');
           warnBox.className = 'job-warn';
           warnBox.append(`${job.inspect.slideCount} Folien vs. ${job.inspect.pdfPages} PDF-Seiten. `);
+          let hasInlineBtn = false;
           if (!job.inspect.includeHiddenUsed &&
               job.inspect.hiddenCount > 0 &&
               job.inspect.pdfPages === job.inspect.slideCount + job.inspect.hiddenCount) {
@@ -824,6 +872,7 @@ function initUI() {
               inspectJob(job);
             });
             warnBox.appendChild(fixBtn);
+            hasInlineBtn = true;
           } else if (job.inspect.includeHiddenUsed &&
               job.inspect.hiddenCount > 0 &&
               job.inspect.pdfPages === job.inspect.slideCount - job.inspect.hiddenCount) {
@@ -836,8 +885,30 @@ function initUI() {
               inspectJob(job);
             });
             warnBox.appendChild(fixBtn);
+            hasInlineBtn = true;
+          }
+          if (needsMismatchConfirm(job) && job.status !== 'running') {
+            if (hasInlineBtn) warnBox.append(' ');
+            const confirmBtn = document.createElement('button');
+            confirmBtn.type = 'button';
+            confirmBtn.className = 'btn-inline';
+            confirmBtn.textContent = 'Trotzdem erstellen';
+            confirmBtn.addEventListener('click', () => {
+              job.confirmedMismatch = true;
+              runJob(job);
+            });
+            warnBox.appendChild(confirmBtn);
+          } else if (job.confirmedMismatch) {
+            warnBox.append(' (bestätigt)');
           }
           info.appendChild(warnBox);
+        }
+
+        if (job.inspect.sourceMismatch) {
+          const srcWarn = document.createElement('div');
+          srcWarn.className = 'job-warn';
+          srcWarn.textContent = job.inspect.sourceMismatch;
+          info.appendChild(srcWarn);
         }
 
         if (job.inspect.attachmentInfo && job.inspect.attachmentInfo.text) {
@@ -889,7 +960,11 @@ function initUI() {
         const goBtn = document.createElement('button');
         goBtn.type = 'button';
         goBtn.className = 'btn-primary';
-        goBtn.disabled = runningBatch;
+        const mismatchBlocked = needsMismatchConfirm(job);
+        goBtn.disabled = runningBatch || job.inspecting || mismatchBlocked;
+        if (mismatchBlocked) {
+          goBtn.title = 'Seitenzahl weicht ab — bitte über „Trotzdem erstellen“ bestätigen oder Folien-Option anpassen.';
+        }
         goBtn.textContent = job.status === 'error' ? 'Erneut' : 'Erstellen';
         goBtn.addEventListener('click', () => runJob(job));
         actions.appendChild(goBtn);

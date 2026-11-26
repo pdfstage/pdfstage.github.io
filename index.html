@@ -39,7 +39,6 @@
   #openHeroBtn:hover { background:#e0002d; }
   #resumeCard { margin:0 0 18px; padding:14px 16px; background:#131620; border:1px solid #353a4a; border-radius:10px; text-align:left; }
   .resume-q { font-size:14px; font-weight:600; color:#f3f4f6; line-height:1.4; word-break:break-word; }
-  .resume-meta { font-size:12px; color:#9aa3b2; margin-top:4px; line-height:1.4; }
   .resume-actions { display:flex; align-items:center; gap:8px; margin-top:12px; flex-wrap:wrap; }
   #resumeBtn { background:#2563eb; border-color:#3b82f6; color:#fff; font-weight:600; font-size:13px; padding:7px 14px; }
   #resumeBtn:hover { background:#1d4ed8; }
@@ -199,7 +198,7 @@
 <body>
 
 <header>
-  <div class="hdr-left" inert><span class="brand">pdfstage</span><span class="app-ver" data-app-version>v0.8.5</span></div>
+  <div class="hdr-left" inert><span class="brand">pdfstage</span><span class="app-ver" data-app-version>v0.8.6</span></div>
   <div id="deckTitle" inert></div>
   <div class="hdr-right">
     <div id="folie" class="hint" inert></div>
@@ -217,7 +216,6 @@
       <div class="open-sub">Lokale <code>.pdf</code> (oder <code>.stage.pdf</code> mit eingebettetem Audio) öffnen oder hierher ziehen &mdash; 100&nbsp;% lokal im Browser.</div>
       <div id="resumeCard" hidden inert>
         <div id="resumeQuestion" class="resume-q"></div>
-        <div id="resumeMeta" class="resume-meta"></div>
         <div class="resume-actions">
           <button id="resumeBtn" type="button">Fortsetzen</button>
           <button id="resumeDismissBtn" type="button">Verwerfen</button>
@@ -2738,7 +2736,6 @@ if (IS_EMBEDDED) {
 
   const resumeCardEl = document.getElementById("resumeCard");
   const resumeQuestionEl = document.getElementById("resumeQuestion");
-  const resumeMetaEl = document.getElementById("resumeMeta");
   const resumeBtnEl = document.getElementById("resumeBtn");
   const resumeDismissBtnEl = document.getElementById("resumeDismissBtn");
 
@@ -2750,24 +2747,14 @@ if (IS_EMBEDDED) {
     return String(name || "").replace(/\.(pdfstage|stage)\.pdf$/i, "").replace(/\.pdf$/i, "");
   }
 
-  function formatResumePrompt(rec) {
+  function formatResumeQuestion(rec) {
     const fm = (rec && rec.fileMeta) || {};
     const st = (rec && rec.state) || {};
     const fileTitle = fm.fallbackTitle || stripPdfExt(fm.name) || "Dokument";
     const isAudio = st.viewMode === "audio" || (typeof st.currentTime === "number" && st.currentTime > 0);
-    const question = isAudio
+    return isAudio
       ? ("\u201e" + fileTitle + "\u201c bei " + fmt(st.currentTime || 0) + " fortsetzen?")
       : ("\u201e" + fileTitle + "\u201c bei Folie " + ((st.currentPage || 0) + 1) + " fortsetzen?");
-    const meta = ["Folie " + ((st.currentPage || 0) + 1)];
-    if (typeof st.playbackRate === "number" && Math.abs(st.playbackRate - 1) > 0.005) {
-      meta.push(fmtRate(st.playbackRate) + "\u00D7");
-    }
-    if (typeof st.volume === "number" && Math.abs(st.volume - 1) > 0.005) {
-      meta.push(Math.round(st.volume * 100) + " %");
-    }
-    if (st.muted) meta.push("Stumm");
-    if (st.textMode) meta.push("Textmodus");
-    return { question: question, meta: meta.join(" \u00B7 ") };
   }
 
   function hideResumePrompt() {
@@ -2781,9 +2768,7 @@ if (IS_EMBEDDED) {
   function showResumePrompt(rec) {
     if (!rec || !rec.fileHandle || !resumeCardEl) return;
     pendingResumeRecord = rec;
-    const text = formatResumePrompt(rec);
-    if (resumeQuestionEl) resumeQuestionEl.textContent = text.question;
-    if (resumeMetaEl) resumeMetaEl.textContent = text.meta;
+    if (resumeQuestionEl) resumeQuestionEl.textContent = formatResumeQuestion(rec);
     resumeCardEl.hidden = false;
     resumeCardEl.inert = false;
   }

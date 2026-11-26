@@ -141,7 +141,7 @@ All fields inside `provenance` are optional (producers may omit them or include 
 
 ### 4. Viewer Hint Overlay (OCG)
 
-When embedding narration audio, both `/cast/` and the `assistant pdfstage` CLI add a non-printable hint pill in the top-right corner of Page 1 (`Enthält Audio für pdfstage.github.io`) for external PDF viewers while hiding it automatically inside `pdfstage` itself:
+When embedding narration audio, `/cast/` (and compatible producers) add a non-printable hint pill in the top-right corner of Page 1 (`Enthält Audio für pdfstage.github.io`) for external PDF viewers while hiding it automatically inside `pdfstage` itself:
 
 - Registered as an Optional Content Group (`pdfstage-hint`) under `/Catalog` → `/OCProperties` (`/ViewState /ON`, `/PrintState /OFF`, plus `/PageMode /UseAttachments` when unset or `/UseNone`).
 - Positioned relative to Page 1's visible `/CropBox` (fallback `/MediaBox`) taking `/Rotate` into account, backed by a `/Stamp` annotation (`pdfstage-hint-stamp`), a clickable `/URI` link (`pdfstage-hint-link` → `https://pdfstage.github.io/`), and a `/SetOCGState` close button (`pdfstage-hint-close`).
@@ -155,23 +155,7 @@ When embedding narration audio, both `/cast/` and the `assistant pdfstage` CLI a
 
 Open [`https://pdfstage.github.io/cast/`](https://pdfstage.github.io/cast/) and drop your PowerPoint-exported `.pdf` alongside the `.ppsx`/`.pptx`.
 
-### Option B: `assistant pdfstage` CLI
-
-The companion Go CLI (`tools/assistant/ppsx`) automates PowerPoint PDF export, FFmpeg Opus timeline encoding, SHA-256 audio reuse, viewer hint generation, and clean replacement of orphaned attachments:
-
-```bash
-# Export slides (if needed), encode audio, and build <Name>.stage.pdf
-assistant pdfstage lecture.ppsx
-
-# Reuse pre-exported PDF or pre-encoded audio, keep orphaned attachments or prompt interactively
-assistant pdfstage lecture.ppsx --pdf lecture.pdf --attach-mode replace   # default: tail-truncate / revision-replay
-assistant pdfstage lecture.ppsx --pdf lecture.pdf --attach-mode ask       # TTY prompt when old audio would remain
-assistant pdfstage lecture.ppsx --pdf lecture.pdf --attach-mode append    # preserve original PDF as exact byte prefix
-
-# Additional CLI options: --audio [path], --viewer, --hidden, --silent-seconds 5, --tail-silence 10, --mp4, --audio-files
-```
-
-### Option C: Generic `pdfcpu` prototyping
+### Option B: Generic `pdfcpu` prototyping
 
 For quick prototyping or inspection, [`pdfcpu`](https://pdfcpu.io/) can attach and extract embedded files:
 
@@ -186,18 +170,17 @@ pdfcpu attachments list deck.pdf
 pdfcpu attachments extract deck.pdf ./extracted/
 ```
 
-*(Note: Generic CLI tools may compress all attachments with `/FlateDecode` by default. Using `/cast/` or `assistant pdfstage` writes minimal incremental updates with `audio.opus` stored raw and `pdfstage.json` compressed with `/FlateDecode`.)*
+*(Note: Generic CLI tools may compress all attachments with `/FlateDecode` by default. Using `/cast/` writes minimal incremental updates with `audio.opus` stored raw and `pdfstage.json` compressed with `/FlateDecode`.)*
 
 ---
 
 ## Conformance Test Suite
 
-Both the browser PDF engine ([`cast/pdf-attach.js`](./cast/pdf-attach.js)) and the Go CLI writer (`tools/assistant/ppsx`) are verified against a shared conformance corpus under [`test/conformance/`](./test/conformance/):
+The browser PDF engine ([`cast/pdf-attach.js`](./cast/pdf-attach.js)) and any compatible external PDF attachment producer can be validated against the language-neutral conformance suite under [`test/conformance/`](./test/conformance/):
 
 - `test/conformance/fixtures/` — 10 deterministic PDF fixtures covering classic xref, `/Rotate 90` + OCGs, `/ObjStm` + XRef streams, multi-revision viewer annotations, foreign attachments + `/Dests`, synthetic linearized PDFs, single-revision full-save PDFs, and digitally signed PDFs.
 - `test/conformance/cases.json` — 11 declarative multi-step specification cases (generated deterministically by `test/conformance/generate-fixtures.mjs`).
-- **JS runner:** `node test/conformance/run-js.mjs`
-- **Go & cross-interop runner:** `go test -v ./ppsx` (`TestSharedConformanceCorpus` + `TestCrossInteropJSAndGo`, which runs both `run-js.mjs` and Go→JS→Go / JS→Go→JS roundtrips).
+- **Runner:** `node test/conformance/run-js.mjs`
 
 ---
 

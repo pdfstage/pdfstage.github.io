@@ -9,23 +9,31 @@ Slide-synced browser player for self-contained PDFs with embedded audio and timi
 - **Single-file container:** Audio and timing metadata live inside the PDF via native `/EmbeddedFiles` — the file remains a valid PDF in any standard viewer.
 - **Broad browser audio support:** Plays any audio format the browser's `<audio>` element can decode (`.opus`, `.ogg`, `.mp3`, `.m4a`, `.wav`, `.webm`, `.flac`, `.aac`) with automatic MIME detection.
 - **Cross-slide native full-text search (`Ctrl+F`):** Renders aligned text layers for every slide using `hidden="until-found"` and `beforematch`, automatically jumping to the matching slide and syncing audio playback.
-- **Formatted text copy:** Preserves font family, bold, italic, and underline styling when copying text directly off a slide, with ink-fitted selection highlights.
-- **Precision timeline controls:** Chapter ticks on the seekbar, hover/touch zoom lens for dense decks, playback speed (`0.5×`–`3.0×` in `0.05×` steps) with both original and speed-adjusted timers, and up to `300%` volume boost via Web Audio API.
+- **Formatted text copy & Text/Selection Mode (`T`):** Preserves font family, bold, italic, and underline styling when copying text directly off a slide, highlights selections natively on the calibrated text layer without Canvas pixel readback, and includes a toggleable caret Text/Selection Mode (`T`) for click-to-place cursor navigation and `Shift`+arrow selection without conflicting with presenter controls.
+- **Precision timeline controls:** Chapter ticks on the seekbar, hover/touch zoom lens for dense decks, playback speed (`0.5×`–`3.0×` in `0.05×` steps) with both original and speed-adjusted timers, up to `300%` volume boost via Web Audio API, styled button tooltips with keycap badges, and a full `?` / `H` shortcuts overlay.
 - **Offline-first PWA:** Zero external runtime dependencies (bundles PDF.js and its worker inline), installable via Web App Manifest with OS `.pdf` file-handler integration (`launchQueue`), drag-and-drop, offline caching, and controlled Service Worker updates without progress loss.
 - **Zero-install browser packer (`/cast/`):** Create `.stage.pdf` files directly in the browser at [`/cast/`](https://pdfstage.github.io/cast/) by exporting slides as `.pdf` from PowerPoint and dropping `.ppsx`/`.pptx` + `.pdf` together — encodes narration into Ogg Opus via Web Audio + WebCodecs without FFmpeg or uploads, supports hash-based audio reuse / 0-byte no-op idempotency, and cleans up obsolete attachments without losing PDF annotations.
 
 ## Keyboard Shortcuts
 
-| Mode | Shortcut | Action |
-| :--- | :--- | :--- |
-| **Both** | `←` / `→` or `PageUp` / `PageDown` | Previous / next slide |
-| **Both** | `Home` / `End` | First / last slide |
-| **Both** | `F` | Toggle fullscreen |
-| **Audio** | `Space` | Play / Pause |
-| **Audio** | `Shift` + `←` / `→` | Seek −10 s / +10 s |
-| **Audio** | `↑` / `↓` | Volume ±5% (0%–300%) |
-| **Audio** | `M` | Mute / unmute |
-| **Audio** | `+` / `-` / `0` | Playback speed ±0.05× / reset to 1× |
+Press `?` (or `H`) at any time — or click the `?` button in the control bar — to open the full interactive shortcut reference (including Text/Selection Mode bindings).
+
+| Mode | Action | Primary | Secondary |
+| :--- | :--- | :--- | :--- |
+| **Both** | Previous / next slide | `←` / `→` | `PageUp` / `PageDown` |
+| **Both** | First / last slide | `Home` / `End` | — |
+| **Both** | Full-text search (all slides) | `Ctrl` + `F` (`⌘` + `F`) | — |
+| **Both** | Toggle Text / Selection Mode (caret) | `T` | `Esc` (exit) |
+| **Both** | Toggle fullscreen | `F` | — |
+| **Both** | Shortcuts overlay | `?` | `H` |
+| **Audio** | Play / Pause | `Space` | `K` |
+| **Audio** | Seek −10 s / +10 s | `Ctrl` + `←` / `→` *(macOS: `⌥`+`←`/`→`)* | `J` / `L` |
+| **Audio** | Volume ±5% (0%–300%) | `↑` / `↓` | — |
+| **Audio** | Mute / unmute | `M` | — |
+| **Audio** | Playback speed ±0.05× | `Ctrl` + `↑` / `↓` *(macOS: `⌥`+`↑`/`↓`)* | `+` / `-` or `>` / `<` |
+| **Audio** | Reset speed to 1× | `0` | — |
+
+Inside **Text / Selection Mode (`T`)** (or while text is selected), `Shift` + `←`/`→`/`↑`/`↓`/`Home`/`End` and `Ctrl`+`←`/`→` extend or move the cursor precisely across lines and words; `Space` still toggles Play/Pause and `PageUp`/`PageDown` still switch slides.
 
 ---
 

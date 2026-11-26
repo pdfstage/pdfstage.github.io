@@ -11,7 +11,7 @@
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
-  #openOverlay[hidden], #wrap[hidden], #fileInput[hidden], #updateBtn[hidden] { display: none !important; }
+  #openOverlay[hidden], #wrap[hidden], #fileInput[hidden], #updateBtn[hidden], #shortcutsModal[hidden], #caret[hidden] { display: none !important; }
   body { margin:0; background:#111; color:#eee; font-family:system-ui,'Segoe UI',sans-serif; display:flex; flex-direction:column; height:100vh; }
   header { padding:10px 16px 4px; font-size:14px; color:#ccc; display:grid; grid-template-columns:minmax(max-content, 1fr) minmax(0, auto) minmax(max-content, 1fr); align-items:center; gap:12px; }
   .hdr-left { display:flex; align-items:center; gap:7px; justify-self:start; white-space:nowrap; }
@@ -57,11 +57,14 @@
   .textLayer > :is(span, br) { color:transparent; -webkit-text-fill-color:transparent; position:absolute; white-space:pre; cursor:text; transform-origin:0% 0%; pointer-events:auto; }
   .textLayer span span { color:transparent; -webkit-text-fill-color:transparent; position:static; white-space:pre; }
   .textLayer br { position:relative; }
-  #tl ::selection { background:transparent; color:transparent; -webkit-text-fill-color:transparent; }
+  #tl ::selection, .textLayer ::selection { background:#93c5fd; color:transparent !important; -webkit-text-fill-color:transparent !important; }
   .textLayer ::search-text { background-color:#ffff00; color:transparent !important; -webkit-text-fill-color:transparent !important; }
   .textLayer ::search-text:current { background-color:#ff9632; color:transparent !important; -webkit-text-fill-color:transparent !important; }
-  #mark { position:absolute; left:0; top:0; right:0; bottom:0; pointer-events:none; }
-  #mark div { position:absolute; background:rgba(59,130,246,.55); border-radius:1px; }
+  body.textmode #wrap { outline:2px solid #3b82f6aa; outline-offset:2px; border-radius:2px; }
+  body.textmode #tl, body.textmode .textLayer:not([hidden]) { pointer-events:auto; cursor:text; }
+  #caret { position:absolute; width:2px; background:#2563eb; border-radius:1px; pointer-events:none; z-index:12; box-shadow:0 0 0 1px rgba(255,255,255,.65); animation:caretBlink 1.05s steps(1, end) infinite; }
+  #caret.solid { animation:none; opacity:1; }
+  @keyframes caretBlink { 0%, 49% { opacity:1; } 50%, 100% { opacity:0; } }
   #leiste { position:relative; }
   #bar { display:flex; align-items:center; gap:8px; padding:8px 16px 14px; flex-wrap:wrap; }
   button { background:#262626; color:#eee; border:1px solid #444; border-radius:6px; padding:6px 12px; font-size:14px; cursor:pointer; }
@@ -148,12 +151,35 @@
   #chapTip .zeit { color:#ccc; font-variant-numeric:tabular-nums; font-weight:600; margin-left:6px; }
   #timeO, #timeS, #speed, #volVal, #counter { font-variant-numeric:tabular-nums; font-size:13px; color:#bbb; text-align:center; }
   #timeO, #timeS { min-width:76px; }
-  #speed, #volVal { min-width:54px; }
+  #speed, #volVal { min-width:54px; background:transparent; border-color:transparent; padding:4px 6px; }
+  #speed:hover, #volVal:hover { background:#262626; border-color:#444; color:#eee; }
   #counter { min-width:64px; }
+  #textModeBtn { display:inline-flex; align-items:center; justify-content:center; min-width:34px; padding:6px 9px; }
+  #textModeBtn.aktiv { background:#1d3557; border-color:#3b82f6; color:#dbeafe; }
+  #textModeBtn.aktiv:hover { background:#254470; }
+  #helpBtn { width:30px; height:30px; border-radius:50%; padding:0; display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:13.5px; line-height:1; }
   #toast { position:fixed; left:50%; top:70px; transform:translateX(-50%); background:#000c; color:#fff; padding:8px 18px; border-radius:8px; font-size:15px; opacity:0; transition:opacity .25s; pointer-events:none; z-index:40; }
   #toast.warn { background:#2b1519f2; border:1px solid #ff4d6d; color:#ffd6de; }
   #hintline { position:absolute; left:0; right:0; bottom:100%; text-align:center; padding:6px 16px 10px; line-height:1.9; pointer-events:none; background:linear-gradient(to top, #111 72%, #1110); }
-  #hintline kbd { background:#2a2a2a; border:1px solid #555; border-bottom-width:2px; border-radius:4px; padding:1px 6px; font-size:11.5px; font-family:inherit; color:#ddd; }
+  #hintline kbd, #btnTip kbd, #shortcutsModal kbd { background:#2a2d3a; border:1px solid #52586b; border-bottom-width:2px; border-radius:4px; padding:1px 6px; font-size:11.5px; font-family:inherit; color:#f3f4f6; line-height:1.25; }
+  #btnTip { position:fixed; left:0; top:0; transform:translate(-50%, -100%); background:#161820f7; color:#eee; border:1px solid #3d4252; border-radius:7px; padding:5px 9px; font-size:12px; line-height:1.3; white-space:nowrap; pointer-events:none; opacity:0; transition:opacity .12s; z-index:60; box-shadow:0 6px 18px #000b; display:flex; align-items:center; gap:7px; }
+  #btnTip.sichtbar { opacity:1; }
+  #btnTip .tip-keys { display:inline-flex; align-items:center; gap:3px; color:#9aa3b2; }
+  #btnTip .tip-alt { margin:0 2px; color:#778091; }
+  #shortcutsModal { position:fixed; inset:0; background:#000a; display:flex; align-items:center; justify-content:center; padding:16px; z-index:70; }
+  .sc-card { width:100%; max-width:700px; max-height:calc(100vh - 32px); overflow:auto; background:#191b22; border:1px solid #353a4a; border-radius:14px; padding:20px 24px 22px; box-shadow:0 18px 44px #000c; color:#e5e7eb; }
+  .sc-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+  .sc-title { font-size:17px; font-weight:600; color:#f3f4f6; }
+  #shortcutsClose { width:30px; height:30px; border-radius:50%; padding:0; font-size:16px; line-height:1; display:inline-flex; align-items:center; justify-content:center; }
+  .sc-sub { font-size:12.5px; color:#9aa3b2; margin-bottom:14px; line-height:1.45; }
+  .sc-sec { font-size:11.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:#9aa3b2; margin:16px 0 6px; }
+  .sc-table { width:100%; border-collapse:collapse; font-size:13px; }
+  .sc-table th { text-align:left; font-size:11.5px; font-weight:600; color:#8f96a6; padding:5px 8px; border-bottom:1px solid #2e3342; }
+  .sc-table td { padding:7px 8px; border-bottom:1px solid #232734; vertical-align:middle; }
+  .sc-table tr:last-child td { border-bottom:none; }
+  .sc-table td:first-child { color:#e5e7eb; }
+  .sc-table td:nth-child(2), .sc-table td:nth-child(3) { white-space:nowrap; }
+  .sc-muted { color:#6b7280; }
   header, #hintline { transition:opacity .4s; }
   body.ruhe header, body.ruhe #hintline { opacity:0; }
   body.fehler header { opacity:1 !important; }
@@ -165,7 +191,7 @@
 <body>
 
 <header>
-  <div class="hdr-left" inert><span class="brand">pdfstage</span><span class="app-ver" data-app-version>v0.8.3</span></div>
+  <div class="hdr-left" inert><span class="brand">pdfstage</span><span class="app-ver" data-app-version>v0.8.4</span></div>
   <div id="deckTitle" inert></div>
   <div class="hdr-right">
     <div id="folie" class="hint" inert></div>
@@ -187,17 +213,60 @@
   </div>
   <div id="wrap" hidden>
     <canvas id="cv" width="1920" height="1080"></canvas>
-    <div id="mark" aria-hidden="true"></div>
+    <div id="caret" aria-hidden="true" hidden></div>
     <div id="tl"></div>
   </div>
 </div>
 <div id="leiste">
   <div id="zoomLens"><div id="zoomTrack"></div></div>
   <div id="chapTip" inert></div>
-  <div id="hintline" class="hint" inert><kbd>&larr;</kbd>/<kbd>&rarr;</kbd> oder <kbd>Bild&uarr;</kbd>/<kbd>Bild&darr;</kbd> Folie &middot; <kbd>Pos1</kbd>/<kbd>Ende</kbd> Anfang/Ende &middot; <kbd>Ctrl</kbd>+<kbd>F</kbd> Volltextsuche &middot; <kbd>F</kbd> Vollbild</div>
-  <div id="bar"><button id="prev" title="Vorherige Folie (Pfeil links)"><span inert>&#9198;</span></button><button id="next" title="Nächste Folie (Pfeil rechts)"><span inert>&#9197;</span></button><input id="slidebar" type="range" min="1" max="1" value="1"><span id="counter" inert></span><button id="fs" title="Vollbild (F)"><span inert>&#9974;</span></button></div>
+  <div id="hintline" class="hint" inert><kbd>&larr;</kbd>/<kbd>&rarr;</kbd> Folie &middot; <kbd>Strg</kbd>+<kbd>F</kbd> Suche &middot; <kbd>T</kbd> Textmodus &middot; <kbd>F</kbd> Vollbild &middot; <kbd>?</kbd> Alle K&uuml;rzel</div>
+  <div id="bar"><button id="prev" data-tip="Vorherige Folie" data-keys="←|Bild↑"><span inert>&#9198;</span></button><button id="next" data-tip="Nächste Folie" data-keys="→|Bild↓"><span inert>&#9197;</span></button><input id="slidebar" type="range" min="1" max="1" value="1"><span id="counter" inert></span><button id="textModeBtn" type="button" aria-pressed="false" data-tip="Text- &amp; Markiermodus" data-keys="T"><span inert><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M5 2.5h6M5 13.5h6M8 2.5v11"/></svg></span></button><button id="fs" data-tip="Vollbild" data-keys="F"><span inert>&#9974;</span></button><button id="helpBtn" type="button" aria-haspopup="dialog" data-tip="Tastenkürzel" data-keys="?|H"><span inert>?</span></button></div>
 </div>
 <div id="toast" inert></div>
+<div id="btnTip" inert></div>
+<div id="shortcutsModal" hidden inert role="dialog" aria-modal="true" aria-labelledby="scTitle">
+  <div class="sc-card">
+    <div class="sc-head">
+      <div id="scTitle" class="sc-title">Tastenk&uuml;rzel</div>
+      <button id="shortcutsClose" type="button" aria-label="Schlie&szlig;en" data-tip="Schlie&szlig;en" data-keys="Esc|?|H"><span inert>&times;</span></button>
+    </div>
+    <div class="sc-sub">Ist Text markiert, erweitern <kbd>Shift</kbd> + Pfeile die Auswahl statt Audio zu spulen; <kbd>Esc</kbd> hebt die Markierung wieder auf.</div>
+    <div class="sc-sec">Wiedergabe &amp; Navigation</div>
+    <table class="sc-table">
+      <thead><tr><th>Aktion</th><th>Prim&auml;r</th><th>Sekund&auml;r</th></tr></thead>
+      <tbody>
+        <tr><td>Play / Pause <span class="sc-muted">(Audio)</span></td><td><kbd>Leertaste</kbd></td><td><kbd>K</kbd></td></tr>
+        <tr><td>Vorherige / n&auml;chste Folie</td><td><kbd>&larr;</kbd> / <kbd>&rarr;</kbd></td><td><kbd>Bild&uarr;</kbd> / <kbd>Bild&darr;</kbd></td></tr>
+        <tr><td>&minus;10 s / +10 s springen <span class="sc-muted">(Audio)</span></td><td><kbd data-mod="ctrl">Strg</kbd>+<kbd>&larr;</kbd> / <kbd>&rarr;</kbd></td><td><kbd>J</kbd> / <kbd>L</kbd></td></tr>
+        <tr><td>Erste / letzte Folie</td><td><kbd>Pos1</kbd> / <kbd>Ende</kbd></td><td><span class="sc-muted">&mdash;</span></td></tr>
+        <tr><td>Lautst&auml;rke &plusmn;5&nbsp;% <span class="sc-muted">(Audio)</span></td><td><kbd>&uarr;</kbd> / <kbd>&darr;</kbd></td><td><span class="sc-muted">&mdash;</span></td></tr>
+        <tr><td>Stumm ein / aus <span class="sc-muted">(Audio)</span></td><td><kbd>M</kbd></td><td><span class="sc-muted">&mdash;</span></td></tr>
+        <tr><td>Geschwindigkeit &plusmn;0,05&times; <span class="sc-muted">(Audio)</span></td><td><kbd data-mod="ctrl">Strg</kbd>+<kbd>&uarr;</kbd> / <kbd>&darr;</kbd></td><td><kbd>+</kbd>/<kbd>&minus;</kbd> oder <kbd>&gt;</kbd>/<kbd>&lt;</kbd></td></tr>
+        <tr><td>Geschwindigkeit 1&times; Reset <span class="sc-muted">(Audio)</span></td><td><kbd>0</kbd></td><td><span class="sc-muted">&mdash;</span></td></tr>
+        <tr><td>Volltextsuche (alle Folien)</td><td><kbd data-mod="cmd">Strg</kbd>+<kbd>F</kbd></td><td><span class="sc-muted">&mdash;</span></td></tr>
+        <tr><td>Text- &amp; Markiermodus</td><td><kbd>T</kbd></td><td><span class="sc-muted">&mdash;</span></td></tr>
+        <tr><td>Vollbild umschalten</td><td><kbd>F</kbd></td><td><span class="sc-muted">&mdash;</span></td></tr>
+        <tr><td>Tastenk&uuml;rzel anzeigen / schlie&szlig;en</td><td><kbd>?</kbd></td><td><kbd>H</kbd> / <kbd>Esc</kbd></td></tr>
+      </tbody>
+    </table>
+    <div class="sc-sec">Text- &amp; Markiermodus (<kbd>T</kbd>)</div>
+    <table class="sc-table">
+      <thead><tr><th>Aktion</th><th>Prim&auml;r</th><th>Sekund&auml;r</th></tr></thead>
+      <tbody>
+        <tr><td>Cursor setzen / ziehen</td><td>Klick in Folie</td><td><span class="sc-muted">&mdash;</span></td></tr>
+        <tr><td>Cursor bewegen (Zeichen / Zeile)</td><td><kbd>&larr;</kbd> <kbd>&rarr;</kbd> <kbd>&uarr;</kbd> <kbd>&darr;</kbd></td><td><kbd data-word>Strg</kbd>+<kbd>&larr;</kbd>/<kbd>&rarr;</kbd> (Wort)</td></tr>
+        <tr><td>Zeilenanfang / -ende</td><td><kbd>Pos1</kbd> / <kbd>Ende</kbd></td><td><kbd data-cmd>Strg</kbd>+<kbd>Pos1</kbd>/<kbd>Ende</kbd> (Folie)</td></tr>
+        <tr><td>Markierung ab Cursor erweitern</td><td><kbd>Shift</kbd> + Pfeile / <kbd>Pos1</kbd> / <kbd>Ende</kbd></td><td><kbd>Shift</kbd>+<kbd data-word>Strg</kbd>+<kbd>&larr;</kbd>/<kbd>&rarr;</kbd></td></tr>
+        <tr><td>Text der aktuellen Folie markieren</td><td><kbd data-mod="cmd">Strg</kbd>+<kbd>A</kbd></td><td><span class="sc-muted">&mdash;</span></td></tr>
+        <tr><td>Formatiert kopieren</td><td><kbd data-mod="cmd">Strg</kbd>+<kbd>C</kbd></td><td><span class="sc-muted">&mdash;</span></td></tr>
+        <tr><td>Play / Pause <span class="sc-muted">(Audio)</span></td><td><kbd>Leertaste</kbd></td><td><span class="sc-muted">&mdash;</span></td></tr>
+        <tr><td>Folie wechseln</td><td><kbd>Bild&uarr;</kbd> / <kbd>Bild&darr;</kbd></td><td><span class="sc-muted">&mdash;</span></td></tr>
+        <tr><td>Markierung aufheben / Modus verlassen</td><td><kbd>Esc</kbd></td><td><kbd>T</kbd></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
 <script>
 /**
  * @licstart The following is the entire license notice for the
@@ -227,10 +296,12 @@
 
 const IS_EMBEDDED = false;
 const INITIAL_HAS_AUDIO = false;
-const PLAYER_HINT_HTML = "\u003ckbd\u003eLeertaste\u003c/kbd\u003e Play/Pause \u0026middot; \u003ckbd\u003e\u0026larr;\u003c/kbd\u003e/\u003ckbd\u003e\u0026rarr;\u003c/kbd\u003e Folie \u0026middot; \u003ckbd\u003eShift\u003c/kbd\u003e+\u003ckbd\u003e\u0026larr;\u003c/kbd\u003e/\u003ckbd\u003e\u0026rarr;\u003c/kbd\u003e \u0026plusmn;10 s \u0026middot; \u003ckbd\u003e\u0026uarr;\u003c/kbd\u003e/\u003ckbd\u003e\u0026darr;\u003c/kbd\u003e Lautst\u0026auml;rke \u0026middot; \u003ckbd\u003eM\u003c/kbd\u003e Stumm \u0026middot; \u003ckbd\u003e+\u003c/kbd\u003e/\u003ckbd\u003e\u0026minus;\u003c/kbd\u003e Speed \u0026middot; \u003ckbd\u003e0\u003c/kbd\u003e Reset \u0026middot; \u003ckbd\u003eF\u003c/kbd\u003e Vollbild";
-const PLAYER_BAR_HTML = "\u003cbutton id=\"prev\" title=\"Vorherige Folie (Pfeil links)\"\u003e\u003cspan inert\u003e\u0026#9198;\u003c/span\u003e\u003c/button\u003e\u003cbutton id=\"play\" title=\"Play/Pause (Leertaste)\"\u003e\u003cspan inert\u003e\u0026#9654;\u003c/span\u003e\u003c/button\u003e\u003cbutton id=\"next\" title=\"Nächste Folie (Pfeil rechts)\"\u003e\u003cspan inert\u003e\u0026#9197;\u003c/span\u003e\u003c/button\u003e\u003cspan id=\"timeO\" title=\"Originalzeit\" inert\u003e\u003c/span\u003e\u003cinput id=\"seek\" type=\"range\" min=\"0\" max=\"1000\" value=\"0\"\u003e\u003cspan id=\"timeS\" title=\"Zeit bei aktueller Geschwindigkeit\" inert\u003e\u003c/span\u003e\u003cbutton id=\"slower\" title=\"Langsamer\"\u003e\u003cspan inert\u003e\u0026minus;\u003c/span\u003e\u003c/button\u003e\u003cspan id=\"speed\" inert\u003e\u003c/span\u003e\u003cbutton id=\"faster\" title=\"Schneller\"\u003e\u003cspan inert\u003e+\u003c/span\u003e\u003c/button\u003e\u003cbutton id=\"volDown\" title=\"Leiser (Pfeil runter)\"\u003e\u003cspan inert\u003e\u0026minus;\u003c/span\u003e\u003c/button\u003e\u003cspan id=\"volVal\" title=\"Lautstärke (Pfeil hoch/runter)\" inert\u003e\u003c/span\u003e\u003cbutton id=\"volUp\" title=\"Lauter (Pfeil hoch)\"\u003e\u003cspan inert\u003e+\u003c/span\u003e\u003c/button\u003e\u003cbutton id=\"fs\" title=\"Vollbild (F)\"\u003e\u003cspan inert\u003e\u0026#9974;\u003c/span\u003e\u003c/button\u003e";
-const VIEWER_HINT_HTML = "\u003ckbd\u003e\u0026larr;\u003c/kbd\u003e/\u003ckbd\u003e\u0026rarr;\u003c/kbd\u003e oder \u003ckbd\u003eBild\u0026uarr;\u003c/kbd\u003e/\u003ckbd\u003eBild\u0026darr;\u003c/kbd\u003e Folie \u0026middot; \u003ckbd\u003ePos1\u003c/kbd\u003e/\u003ckbd\u003eEnde\u003c/kbd\u003e Anfang/Ende \u0026middot; \u003ckbd\u003eCtrl\u003c/kbd\u003e+\u003ckbd\u003eF\u003c/kbd\u003e Volltextsuche \u0026middot; \u003ckbd\u003eF\u003c/kbd\u003e Vollbild";
-const VIEWER_BAR_HTML = "\u003cbutton id=\"prev\" title=\"Vorherige Folie (Pfeil links)\"\u003e\u003cspan inert\u003e\u0026#9198;\u003c/span\u003e\u003c/button\u003e\u003cbutton id=\"next\" title=\"Nächste Folie (Pfeil rechts)\"\u003e\u003cspan inert\u003e\u0026#9197;\u003c/span\u003e\u003c/button\u003e\u003cinput id=\"slidebar\" type=\"range\" min=\"1\" max=\"1\" value=\"1\"\u003e\u003cspan id=\"counter\" inert\u003e\u003c/span\u003e\u003cbutton id=\"fs\" title=\"Vollbild (F)\"\u003e\u003cspan inert\u003e\u0026#9974;\u003c/span\u003e\u003c/button\u003e";
+const PLAYER_HINT_HTML = "\u003ckbd\u003eLeertaste\u003c/kbd\u003e Play/Pause \u0026middot; \u003ckbd\u003e\u0026larr;\u003c/kbd\u003e/\u003ckbd\u003e\u0026rarr;\u003c/kbd\u003e Folie \u0026middot; \u003ckbd\u003eStrg\u003c/kbd\u003e+\u003ckbd\u003e\u0026larr;\u003c/kbd\u003e/\u003ckbd\u003e\u0026rarr;\u003c/kbd\u003e \u0026plusmn;10 s \u0026middot; \u003ckbd\u003e\u0026uarr;\u003c/kbd\u003e/\u003ckbd\u003e\u0026darr;\u003c/kbd\u003e Lautst\u0026auml;rke \u0026middot; \u003ckbd\u003eT\u003c/kbd\u003e Textmodus \u0026middot; \u003ckbd\u003e?\u003c/kbd\u003e Alle K\u0026uuml;rzel";
+const PLAYER_BAR_HTML = "\u003cbutton id=\"prev\" data-tip=\"Vorherige Folie\" data-keys=\"\u2190|Bild\u2191\"\u003e\u003cspan inert\u003e\u0026#9198;\u003c/span\u003e\u003c/button\u003e\u003cbutton id=\"play\" data-tip=\"Play / Pause\" data-keys=\"Leertaste|K\"\u003e\u003cspan inert\u003e\u0026#9654;\u003c/span\u003e\u003c/button\u003e\u003cbutton id=\"next\" data-tip=\"N\u00e4chste Folie\" data-keys=\"\u2192|Bild\u2193\"\u003e\u003cspan inert\u003e\u0026#9197;\u003c/span\u003e\u003c/button\u003e\u003cspan id=\"timeO\" title=\"Originalzeit\" inert\u003e\u003c/span\u003e\u003cinput id=\"seek\" type=\"range\" min=\"0\" max=\"1000\" value=\"0\"\u003e\u003cspan id=\"timeS\" title=\"Zeit bei aktueller Geschwindigkeit\" inert\u003e\u003c/span\u003e\u003cbutton id=\"slower\" data-tip=\"Langsamer (\u22120,05\u00d7)\" data-keys=\"Strg+\u2193|-|\u003c\"\u003e\u003cspan inert\u003e\u0026minus;\u003c/span\u003e\u003c/button\u003e\u003cbutton id=\"speed\" type=\"button\" data-tip=\"Tempo 1\u00d7 zur\u00fccksetzen\" data-keys=\"0\"\u003e\u003cspan inert\u003e\u003c/span\u003e\u003c/button\u003e\u003cbutton id=\"faster\" data-tip=\"Schneller (+0,05\u00d7)\" data-keys=\"Strg+\u2191|+|\u003e\"\u003e\u003cspan inert\u003e+\u003c/span\u003e\u003c/button\u003e\u003cbutton id=\"volDown\" data-tip=\"Leiser (\u22125 %)\" data-keys=\"\u2193\"\u003e\u003cspan inert\u003e\u0026minus;\u003c/span\u003e\u003c/button\u003e\u003cbutton id=\"volVal\" type=\"button\" data-tip=\"Stumm ein / aus\" data-keys=\"M\"\u003e\u003cspan inert\u003e\u003c/span\u003e\u003c/button\u003e\u003cbutton id=\"volUp\" data-tip=\"Lauter (+5 %)\" data-keys=\"\u2191\"\u003e\u003cspan inert\u003e+\u003c/span\u003e\u003c/button\u003e\u003cbutton id=\"textModeBtn\" type=\"button\" aria-pressed=\"false\" data-tip=\"Text- \u0026amp; Markiermodus\" data-keys=\"T\"\u003e\u003cspan inert\u003e\u003csvg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"\u003e\u003cpath d=\"M5 2.5h6M5 13.5h6M8 2.5v11\"/\u003e\u003c/svg\u003e\u003c/span\u003e\u003c/button\u003e\u003cbutton id=\"fs\" data-tip=\"Vollbild\" data-keys=\"F\"\u003e\u003cspan inert\u003e\u0026#9974;\u003c/span\u003e\u003c/button\u003e\u003cbutton id=\"helpBtn\" type=\"button\" aria-haspopup=\"dialog\" data-tip=\"Tastenk\u00fcrzel\" data-keys=\"?|H\"\u003e\u003cspan inert\u003e?\u003c/span\u003e\u003c/button\u003e";
+const VIEWER_HINT_HTML = "\u003ckbd\u003e\u0026larr;\u003c/kbd\u003e/\u003ckbd\u003e\u0026rarr;\u003c/kbd\u003e Folie \u0026middot; \u003ckbd\u003eStrg\u003c/kbd\u003e+\u003ckbd\u003eF\u003c/kbd\u003e Suche \u0026middot; \u003ckbd\u003eT\u003c/kbd\u003e Textmodus \u0026middot; \u003ckbd\u003eF\u003c/kbd\u003e Vollbild \u0026middot; \u003ckbd\u003e?\u003c/kbd\u003e Alle K\u0026uuml;rzel";
+const VIEWER_BAR_HTML = "\u003cbutton id=\"prev\" data-tip=\"Vorherige Folie\" data-keys=\"\u2190|Bild\u2191\"\u003e\u003cspan inert\u003e\u0026#9198;\u003c/span\u003e\u003c/button\u003e\u003cbutton id=\"next\" data-tip=\"N\u00e4chste Folie\" data-keys=\"\u2192|Bild\u2193\"\u003e\u003cspan inert\u003e\u0026#9197;\u003c/span\u003e\u003c/button\u003e\u003cinput id=\"slidebar\" type=\"range\" min=\"1\" max=\"1\" value=\"1\"\u003e\u003cspan id=\"counter\" inert\u003e\u003c/span\u003e\u003cbutton id=\"textModeBtn\" type=\"button\" aria-pressed=\"false\" data-tip=\"Text- \u0026amp; Markiermodus\" data-keys=\"T\"\u003e\u003cspan inert\u003e\u003csvg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"\u003e\u003cpath d=\"M5 2.5h6M5 13.5h6M8 2.5v11\"/\u003e\u003c/svg\u003e\u003c/span\u003e\u003c/button\u003e\u003cbutton id=\"fs\" data-tip=\"Vollbild\" data-keys=\"F\"\u003e\u003cspan inert\u003e\u0026#9974;\u003c/span\u003e\u003c/button\u003e\u003cbutton id=\"helpBtn\" type=\"button\" aria-haspopup=\"dialog\" data-tip=\"Tastenk\u00fcrzel\" data-keys=\"?|H\"\u003e\u003cspan inert\u003e?\u003c/span\u003e\u003c/button\u003e";
+const TEXTMODE_PLAYER_HINT_HTML = "Textmodus \u0026middot; \u003ckbd\u003e\u0026larr;\u003c/kbd\u003e\u003ckbd\u003e\u0026rarr;\u003c/kbd\u003e\u003ckbd\u003e\u0026uarr;\u003c/kbd\u003e\u003ckbd\u003e\u0026darr;\u003c/kbd\u003e Cursor \u0026middot; \u003ckbd\u003eShift\u003c/kbd\u003e+Pfeile Markieren \u0026middot; \u003ckbd\u003eStrg\u003c/kbd\u003e+\u003ckbd\u003eC\u003c/kbd\u003e Kopieren \u0026middot; \u003ckbd\u003eLeertaste\u003c/kbd\u003e Play/Pause \u0026middot; \u003ckbd\u003eEsc\u003c/kbd\u003e/\u003ckbd\u003eT\u003c/kbd\u003e Beenden";
+const TEXTMODE_VIEWER_HINT_HTML = "Textmodus \u0026middot; \u003ckbd\u003e\u0026larr;\u003c/kbd\u003e\u003ckbd\u003e\u0026rarr;\u003c/kbd\u003e\u003ckbd\u003e\u0026uarr;\u003c/kbd\u003e\u003ckbd\u003e\u0026darr;\u003c/kbd\u003e Cursor \u0026middot; \u003ckbd\u003eShift\u003c/kbd\u003e+Pfeile Markieren \u0026middot; \u003ckbd\u003eStrg\u003c/kbd\u003e+\u003ckbd\u003eC\u003c/kbd\u003e Kopieren \u0026middot; \u003ckbd\u003eBild\u0026uarr;\u003c/kbd\u003e/\u003ckbd\u003eBild\u0026darr;\u003c/kbd\u003e Folie \u0026middot; \u003ckbd\u003eEsc\u003c/kbd\u003e/\u003ckbd\u003eT\u003c/kbd\u003e Beenden";
 
 let HAS_AUDIO = INITIAL_HAS_AUDIO;
 let TOTAL_DUR = 0;
@@ -459,80 +530,473 @@ function maybeRerender() {
 
 let resizeTimer = null;
 
-function zeichneMarkierung() {
-  const mark = document.getElementById("mark");
-  if (!mark) return;
-  mark.textContent = "";
+const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent || "");
+const caretEl = document.getElementById("caret");
+const btnTipEl = document.getElementById("btnTip");
+const shortcutsModalEl = document.getElementById("shortcutsModal");
+const shortcutsCloseBtn = document.getElementById("shortcutsClose");
+let textMode = false;
+let caretSolidTimer = null;
+
+function activeSlideLayer() {
+  return cur >= 0 ? (textLayers[cur] || null) : null;
+}
+
+function hasSlideSelection() {
+  const layer = activeSlideLayer();
+  if (!layer) return false;
   const sel = getSelection();
-  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+  return Boolean(sel && sel.rangeCount > 0 && !sel.isCollapsed &&
+    ((sel.anchorNode && layer.contains(sel.anchorNode)) || (sel.focusNode && layer.contains(sel.focusNode))));
+}
+
+function isCaretInActiveSlide() {
+  const layer = activeSlideLayer();
+  if (!layer) return false;
+  const sel = getSelection();
+  if (!sel || sel.rangeCount === 0) return false;
+  const n = sel.focusNode || sel.anchorNode;
+  return Boolean(n && layer.contains(n));
+}
+
+function firstTextNode(root) {
+  if (!root) return null;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  let n;
+  while ((n = w.nextNode())) {
+    if (n.nodeValue && n.nodeValue.length > 0) return n;
+  }
+  return null;
+}
+
+function lastTextNode(root) {
+  if (!root) return null;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  let n, last = null;
+  while ((n = w.nextNode())) {
+    if (n.nodeValue && n.nodeValue.length > 0) last = n;
+  }
+  return last;
+}
+
+function getRangeCaretRect(node, offset) {
+  if (!node) return null;
+  try {
+    if (node.nodeType === 3) {
+      const len = node.nodeValue ? node.nodeValue.length : 0;
+      const r = document.createRange();
+      if (offset < len) {
+        r.setStart(node, offset);
+        r.setEnd(node, offset + 1);
+        const cr = r.getClientRects()[0] || r.getBoundingClientRect();
+        if (cr && cr.height >= 1) return { left: cr.left, top: cr.top, height: cr.height };
+      } else if (len > 0) {
+        r.setStart(node, len - 1);
+        r.setEnd(node, len);
+        const cr = r.getClientRects()[0] || r.getBoundingClientRect();
+        if (cr && cr.height >= 1) return { left: cr.right, top: cr.top, height: cr.height };
+      }
+      const p = node.parentElement;
+      if (p) {
+        const pr = p.getBoundingClientRect();
+        if (pr && pr.height >= 1) return { left: pr.left, top: pr.top, height: pr.height };
+      }
+    } else if (node.nodeType === 1) {
+      const er = node.getBoundingClientRect();
+      if (er && er.height >= 1) return { left: er.left, top: er.top, height: er.height };
+    }
+  } catch (e) {}
+  return null;
+}
+
+function updateCaret(keepSolid) {
+  if (!caretEl) return;
+  const sel = getSelection();
+  if (!textMode || !pdfDoc || !sel || sel.rangeCount === 0 || !sel.isCollapsed || !isCaretInActiveSlide()) {
+    caretEl.hidden = true;
+    caretEl.classList.remove("solid");
+    clearTimeout(caretSolidTimer);
+    return;
+  }
+  const rect = getRangeCaretRect(sel.focusNode || sel.anchorNode, sel.focusOffset);
   const wrap = document.getElementById("wrap");
+  if (!rect || !wrap) {
+    caretEl.hidden = true;
+    return;
+  }
   const wb = wrap.getBoundingClientRect();
   const k = wb.width ? wrap.offsetWidth / wb.width : 1;
-  const sichtbar = document.getElementById("cv");
-  const kx = sichtbar && sichtbar.clientWidth ? sichtbar.width / sichtbar.clientWidth : 1;
-  const ky = sichtbar && sichtbar.clientHeight ? sichtbar.height / sichtbar.clientHeight : 1;
-  const ctx2d = sichtbar ? sichtbar.getContext("2d") : null;
-  const cvBox = sichtbar ? sichtbar.getBoundingClientRect() : null;
-
-  function tinteObenUnten(q) {
-    if (!ctx2d || !cvBox) return null;
-    const pad = Math.max(4, q.height * 0.45);
-    const x0 = Math.max(0, Math.floor((q.left - cvBox.left) * kx) - 1);
-    const x1 = Math.min(sichtbar.width, Math.ceil((q.right - cvBox.left) * kx) + 1);
-    const y0 = Math.max(0, Math.floor((q.top - cvBox.top - pad) * ky));
-    const y1 = Math.min(sichtbar.height, Math.ceil((q.bottom - cvBox.top + pad) * ky));
-    if (x1 <= x0 || y1 <= y0) return null;
-    let daten;
-    try { daten = ctx2d.getImageData(x0, y0, x1 - x0, y1 - y0).data; } catch (e) { return null; }
-    const breite = x1 - x0;
-    let oben = null, unten = null, links = null, rechts = null;
-    for (let yy = 0; yy < y1 - y0; yy++) {
-      let treffer = false;
-      for (let xx = 0; xx < breite; xx++) {
-        const o = (yy * breite + xx) * 4;
-        if ((daten[o] + daten[o + 1] + daten[o + 2]) / 3 < 160) { treffer = true; break; }
-      }
-      if (treffer) { if (oben === null) oben = yy + y0; unten = yy + y0; }
-    }
-    for (let xx = 0; xx < breite; xx++) {
-      let treffer = false;
-      for (let yy = 0; yy < y1 - y0; yy++) {
-        const o = (yy * breite + xx) * 4;
-        if ((daten[o] + daten[o + 1] + daten[o + 2]) / 3 < 160) { treffer = true; break; }
-      }
-      if (treffer) { if (links === null) links = xx + x0; rechts = xx + x0; }
-    }
-    if (oben === null) return null;
-    return {
-      oben: cvBox.top + oben / ky, unten: cvBox.top + (unten + 1) / ky,
-      links: links === null ? null : cvBox.left + links / kx,
-      rechts: rechts === null ? null : cvBox.left + (rechts + 1) / kx
-    };
-  }
-
-  for (let i = 0; i < sel.rangeCount; i++) {
-    const r = sel.getRangeAt(i);
-    if (r.collapsed) continue;
-    let rects;
-    try { rects = r.getClientRects(); } catch (e) { continue; }
-    for (let j = 0; j < rects.length; j++) {
-      const q = rects[j];
-      if (q.width < 0.5 || q.height < 0.5) continue;
-      let oben = q.top, unten = q.bottom, links = q.left, rechts = q.right;
-      const tinte = tinteObenUnten(q);
-      if (tinte) {
-        oben = tinte.oben; unten = tinte.unten;
-        if (tinte.links !== null) { links = tinte.links; rechts = tinte.rechts; }
-      }
-      const d = document.createElement("div");
-      d.style.left = ((links - wb.left) * k) + "px";
-      d.style.top = ((oben - wb.top) * k) + "px";
-      d.style.width = (Math.max(0.5, rechts - links) * k) + "px";
-      d.style.height = (Math.max(0.5, unten - oben) * k) + "px";
-      mark.appendChild(d);
-    }
+  caretEl.style.left = Math.max(0, (rect.left - wb.left) * k - 1) + "px";
+  caretEl.style.top = Math.max(0, (rect.top - wb.top) * k) + "px";
+  caretEl.style.height = Math.max(10, rect.height * k) + "px";
+  caretEl.hidden = false;
+  if (keepSolid) {
+    caretEl.classList.add("solid");
+    clearTimeout(caretSolidTimer);
+    caretSolidTimer = setTimeout(function () { caretEl.classList.remove("solid"); }, 450);
   }
 }
+
+function collectSlideTextSpans(layer) {
+  const list = [];
+  if (!layer) return list;
+  const kids = layer.children;
+  for (let i = 0; i < kids.length; i++) {
+    const sp = kids[i];
+    if (sp.tagName !== "SPAN" || !sp.textContent) continue;
+    const rect = sp.getBoundingClientRect();
+    if (!rect || rect.width < 0.5 || rect.height < 0.5) continue;
+    list.push({ span: sp, rect: rect, midY: (rect.top + rect.bottom) * 0.5 });
+  }
+  return list;
+}
+
+function closestOffsetInSpan(span, targetX) {
+  const w = document.createTreeWalker(span, NodeFilter.SHOW_TEXT, null);
+  const r = document.createRange();
+  let bestNode = null, bestOffset = 0, bestDist = Infinity;
+  let tn;
+  while ((tn = w.nextNode())) {
+    const len = tn.nodeValue ? tn.nodeValue.length : 0;
+    if (!len) continue;
+    for (let i = 0; i < len; i++) {
+      r.setStart(tn, i);
+      r.setEnd(tn, i + 1);
+      const cr = r.getClientRects()[0] || r.getBoundingClientRect();
+      if (!cr || cr.height < 0.5) continue;
+      const dLeft = Math.abs(cr.left - targetX);
+      if (dLeft < bestDist) { bestDist = dLeft; bestNode = tn; bestOffset = i; }
+      if (i === len - 1) {
+        const dRight = Math.abs(cr.right - targetX);
+        if (dRight < bestDist) { bestDist = dRight; bestNode = tn; bestOffset = len; }
+      }
+    }
+  }
+  if (!bestNode) {
+    const fn = firstTextNode(span);
+    if (fn) return { node: fn, offset: 0 };
+  }
+  return bestNode ? { node: bestNode, offset: bestOffset } : null;
+}
+
+function ensureSelectionInSlide() {
+  const layer = activeSlideLayer();
+  const sel = getSelection();
+  if (!layer || !sel) return null;
+  if (!isCaretInActiveSlide()) {
+    const fn = firstTextNode(layer);
+    if (!fn) return null;
+    sel.collapse(fn, 0);
+  }
+  return sel;
+}
+
+function applyCaretTarget(sel, node, offset, extend) {
+  if (!sel || !node) return;
+  if (extend) {
+    try { sel.extend(node, offset); return; } catch (e) {}
+  }
+  sel.collapse(node, offset);
+}
+
+function moveCaretHorizontal(dir, granularity, extend) {
+  const layer = activeSlideLayer();
+  const sel = ensureSelectionInSlide();
+  if (!layer || !sel || typeof sel.modify !== "function") return;
+  const saved = { an: sel.anchorNode, ao: sel.anchorOffset, fn: sel.focusNode, fo: sel.focusOffset };
+  sel.modify(extend ? "extend" : "move", dir < 0 ? "backward" : "forward", granularity);
+  if (!sel.focusNode || !layer.contains(sel.focusNode)) {
+    try {
+      sel.collapse(saved.an, saved.ao);
+      if (extend && saved.fn) sel.extend(saved.fn, saved.fo);
+    } catch (e) {}
+  }
+}
+
+function moveCaretVertical(dir, extend) {
+  const layer = activeSlideLayer();
+  const sel = ensureSelectionInSlide();
+  if (!layer || !sel) return;
+  const fp = getRangeCaretRect(sel.focusNode || sel.anchorNode, sel.focusOffset);
+  if (!fp) return;
+  const spans = collectSlideTextSpans(layer);
+  if (!spans.length) return;
+  const cx = fp.left;
+  const cy = fp.top + fp.height * 0.5;
+  const minStep = Math.max(4, fp.height * 0.35);
+  const cands = [];
+  let minDy = Infinity;
+  for (let i = 0; i < spans.length; i++) {
+    const item = spans[i];
+    const dy = dir < 0 ? (cy - item.midY) : (item.midY - cy);
+    if (dy > minStep) {
+      cands.push({ item: item, dy: dy });
+      if (dy < minDy) minDy = dy;
+    }
+  }
+  if (!cands.length) {
+    const edgeNode = dir < 0 ? firstTextNode(layer) : lastTextNode(layer);
+    if (edgeNode) applyCaretTarget(sel, edgeNode, dir < 0 ? 0 : edgeNode.nodeValue.length, extend);
+    return;
+  }
+  const lineTol = Math.max(5, fp.height * 0.45);
+  let best = null, bestDx = Infinity;
+  for (let i = 0; i < cands.length; i++) {
+    if (cands[i].dy - minDy > lineTol) continue;
+    const r = cands[i].item.rect;
+    const dx = cx < r.left ? (r.left - cx) : (cx > r.right ? (cx - r.right) : 0);
+    if (dx < bestDx) { bestDx = dx; best = cands[i].item; }
+  }
+  if (best) {
+    const pos = closestOffsetInSpan(best.span, cx);
+    if (pos) applyCaretTarget(sel, pos.node, pos.offset, extend);
+  }
+}
+
+function moveCaretLineEdge(toEnd, extend, toSlideEdge) {
+  const layer = activeSlideLayer();
+  const sel = ensureSelectionInSlide();
+  if (!layer || !sel) return;
+  if (toSlideEdge) {
+    const edgeNode = toEnd ? lastTextNode(layer) : firstTextNode(layer);
+    if (edgeNode) applyCaretTarget(sel, edgeNode, toEnd ? edgeNode.nodeValue.length : 0, extend);
+    return;
+  }
+  const fp = getRangeCaretRect(sel.focusNode || sel.anchorNode, sel.focusOffset);
+  if (!fp) return;
+  const cy = fp.top + fp.height * 0.5;
+  const lineTol = Math.max(5, fp.height * 0.45);
+  const spans = collectSlideTextSpans(layer).filter(function (s) {
+    return Math.abs(s.midY - cy) <= lineTol;
+  });
+  if (!spans.length) return;
+  spans.sort(function (a, b) { return a.rect.left - b.rect.left; });
+  const targetSpan = toEnd ? spans[spans.length - 1].span : spans[0].span;
+  const targetNode = toEnd ? lastTextNode(targetSpan) : firstTextNode(targetSpan);
+  if (targetNode) applyCaretTarget(sel, targetNode, toEnd ? targetNode.nodeValue.length : 0, extend);
+}
+
+function placeCaretAtPoint(clientX, clientY) {
+  const layer = activeSlideLayer();
+  const sel = getSelection();
+  if (!layer || !sel) return;
+  let hitNode = null, hitOffset = 0;
+  try {
+    if (typeof document.caretPositionFromPoint === "function") {
+      const cp = document.caretPositionFromPoint(clientX, clientY);
+      if (cp && cp.offsetNode && layer.contains(cp.offsetNode) && cp.offsetNode.nodeType === 3) {
+        hitNode = cp.offsetNode;
+        hitOffset = cp.offset;
+      }
+    } else if (typeof document.caretRangeFromPoint === "function") {
+      const cr = document.caretRangeFromPoint(clientX, clientY);
+      if (cr && cr.startContainer && layer.contains(cr.startContainer) && cr.startContainer.nodeType === 3) {
+        hitNode = cr.startContainer;
+        hitOffset = cr.startOffset;
+      }
+    }
+  } catch (e) {}
+
+  if (!hitNode) {
+    const spans = collectSlideTextSpans(layer);
+    if (!spans.length) return;
+    let minDy = Infinity;
+    for (let i = 0; i < spans.length; i++) {
+      const r = spans[i].rect;
+      const dy = clientY < r.top ? (r.top - clientY) : (clientY > r.bottom ? (clientY - r.bottom) : 0);
+      if (dy < minDy) minDy = dy;
+    }
+    let best = null, bestDx = Infinity;
+    for (let i = 0; i < spans.length; i++) {
+      const r = spans[i].rect;
+      const dy = clientY < r.top ? (r.top - clientY) : (clientY > r.bottom ? (clientY - r.bottom) : 0);
+      if (dy - minDy > 6) continue;
+      const dx = clientX < r.left ? (r.left - clientX) : (clientX > r.right ? (clientX - r.right) : 0);
+      if (dx < bestDx) { bestDx = dx; best = spans[i]; }
+    }
+    if (best) {
+      const pos = closestOffsetInSpan(best.span, clientX);
+      if (pos) { hitNode = pos.node; hitOffset = pos.offset; }
+    }
+  }
+  if (hitNode) {
+    sel.collapse(hitNode, hitOffset);
+    updateCaret(true);
+  }
+}
+
+function selectSlideText() {
+  const layer = activeSlideLayer();
+  const sel = getSelection();
+  if (!layer || !sel) return false;
+  const fn = firstTextNode(layer);
+  const ln = lastTextNode(layer);
+  if (!fn || !ln) return false;
+  const r = document.createRange();
+  r.setStart(fn, 0);
+  r.setEnd(ln, ln.nodeValue.length);
+  sel.removeAllRanges();
+  sel.addRange(r);
+  updateCaret();
+  return true;
+}
+
+function syncHintline() {
+  if (!hintLineEl) return;
+  if (textMode) {
+    hintLineEl.innerHTML = HAS_AUDIO ? TEXTMODE_PLAYER_HINT_HTML : TEXTMODE_VIEWER_HINT_HTML;
+  } else {
+    hintLineEl.innerHTML = HAS_AUDIO ? PLAYER_HINT_HTML : VIEWER_HINT_HTML;
+  }
+}
+
+function setTextMode(on, silent) {
+  const next = Boolean(on && pdfDoc);
+  if (textMode === next && !silent) return;
+  textMode = next;
+  document.body.classList.toggle("textmode", textMode);
+  const tBtn = document.getElementById("textModeBtn");
+  if (tBtn) {
+    tBtn.classList.toggle("aktiv", textMode);
+    tBtn.setAttribute("aria-pressed", textMode ? "true" : "false");
+  }
+  syncHintline();
+  if (textMode) {
+    const sel = getSelection();
+    if (!hasSlideSelection() && !isCaretInActiveSlide()) {
+      const layer = activeSlideLayer();
+      const fn = firstTextNode(layer);
+      if (fn && sel) sel.collapse(fn, 0);
+    }
+    updateCaret(true);
+    if (!silent) toast("Textmodus aktiv \u2014 Esc oder T zum Beenden", 1800);
+  } else {
+    updateCaret();
+    if (!silent) toast("Textmodus beendet");
+  }
+  ruheNeu();
+}
+
+function hideButtonTip() {
+  if (btnTipEl) btnTipEl.classList.remove("sichtbar");
+}
+
+function showButtonTip(target) {
+  if (!btnTipEl || !target || !target.dataset || !target.dataset.tip) return;
+  btnTipEl.textContent = "";
+  const label = document.createElement("span");
+  label.textContent = target.dataset.tip;
+  btnTipEl.appendChild(label);
+  const keysAttr = target.dataset.keys || "";
+  if (keysAttr) {
+    const keysWrap = document.createElement("span");
+    keysWrap.className = "tip-keys";
+    const alts = keysAttr.split("|");
+    for (let i = 0; i < alts.length; i++) {
+      if (i > 0) {
+        const sep = document.createElement("span");
+        sep.className = "tip-alt";
+        sep.textContent = "/";
+        keysWrap.appendChild(sep);
+      }
+      const parts = alts[i].split("+");
+      for (let j = 0; j < parts.length; j++) {
+        if (j > 0) keysWrap.appendChild(document.createTextNode("+"));
+        const k = document.createElement("kbd");
+        k.textContent = parts[j];
+        keysWrap.appendChild(k);
+      }
+    }
+    btnTipEl.appendChild(keysWrap);
+  }
+  btnTipEl.classList.add("sichtbar");
+  const rect = target.getBoundingClientRect();
+  const tipW = btnTipEl.offsetWidth || 120;
+  const tipH = btnTipEl.offsetHeight || 28;
+  const x = Math.max(tipW * 0.5 + 8, Math.min(window.innerWidth - tipW * 0.5 - 8, rect.left + rect.width * 0.5));
+  let y = rect.top - 8;
+  let flipBelow = false;
+  if (y - tipH < 8) {
+    y = rect.bottom + 8;
+    flipBelow = true;
+  }
+  btnTipEl.style.left = x + "px";
+  btnTipEl.style.top = y + "px";
+  btnTipEl.style.transform = flipBelow ? "translate(-50%, 0)" : "translate(-50%, -100%)";
+}
+
+(function initButtonTooltipsAndModal() {
+  if (IS_MAC && shortcutsModalEl) {
+    shortcutsModalEl.querySelectorAll("[data-mod='cmd']").forEach(function (el) { el.textContent = "\u2318"; });
+    shortcutsModalEl.querySelectorAll("[data-word]").forEach(function (el) { el.textContent = "\u2325"; });
+  }
+  document.addEventListener("mouseover", function (e) {
+    const b = e.target && e.target.closest ? e.target.closest("[data-tip]") : null;
+    if (b) showButtonTip(b); else hideButtonTip();
+  });
+  document.addEventListener("mouseout", function (e) {
+    const from = e.target && e.target.closest ? e.target.closest("[data-tip]") : null;
+    if (!from) return;
+    const to = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest("[data-tip]") : null;
+    if (to !== from) hideButtonTip();
+  });
+  document.addEventListener("focusin", function (e) {
+    const b = e.target && e.target.closest ? e.target.closest("[data-tip]") : null;
+    if (b) showButtonTip(b);
+  });
+  document.addEventListener("focusout", hideButtonTip);
+  document.addEventListener("mousedown", hideButtonTip, { passive: true });
+  window.addEventListener("scroll", hideButtonTip, { passive: true });
+})();
+
+function openShortcutsModal() {
+  if (!shortcutsModalEl) return;
+  hideButtonTip();
+  shortcutsModalEl.hidden = false;
+  shortcutsModalEl.inert = false;
+  document.body.classList.remove("ruhe");
+  clearTimeout(ruheTimer);
+  if (shortcutsCloseBtn) {
+    try { shortcutsCloseBtn.focus({ preventScroll: true }); } catch (e) {}
+  }
+}
+
+function closeShortcutsModal() {
+  if (!shortcutsModalEl || shortcutsModalEl.hidden) return;
+  hideButtonTip();
+  shortcutsModalEl.hidden = true;
+  shortcutsModalEl.inert = true;
+  ruheNeu();
+}
+
+function toggleShortcutsModal() {
+  if (!shortcutsModalEl) return;
+  if (shortcutsModalEl.hidden) openShortcutsModal();
+  else closeShortcutsModal();
+}
+
+if (shortcutsCloseBtn) shortcutsCloseBtn.addEventListener("click", closeShortcutsModal);
+if (shortcutsModalEl) {
+  shortcutsModalEl.addEventListener("click", function (e) {
+    if (e.target === shortcutsModalEl) closeShortcutsModal();
+  });
+}
+
+(function bindSlideCaretClick() {
+  const wrap = document.getElementById("wrap");
+  if (!wrap) return;
+  wrap.addEventListener("mouseup", function (e) {
+    if (!textMode || e.button !== 0) return;
+    setTimeout(function () {
+      const sel = getSelection();
+      if (!sel || sel.isCollapsed || !hasSlideSelection()) {
+        placeCaretAtPoint(e.clientX, e.clientY);
+      } else {
+        updateCaret();
+      }
+    }, 0);
+  });
+})();
 
 function folgeSuche() {
   const auswahl = document.getSelection();
@@ -547,19 +1011,20 @@ function folgeSuche() {
     try { audio.currentTime = STARTS[ziel] + 0.001; } catch (e) {}
   }
   show(ziel, true);
-  setTimeout(zeichneMarkierung, 60);
+  setTimeout(updateCaret, 60);
 }
 
-document.addEventListener("selectionchange", function () { folgeSuche(); zeichneMarkierung(); });
+document.addEventListener("selectionchange", function () { folgeSuche(); updateCaret(); });
 window.addEventListener("resize", function () {
+  hideButtonTip();
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(function () { fitStage(); fit(); maybeRerender(); zeichneMarkierung(); updateKapitelStriche(); }, 250);
+  resizeTimer = setTimeout(function () { fitStage(); fit(); maybeRerender(); updateCaret(); updateKapitelStriche(); }, 250);
 });
 fitStage();
 if (window.ResizeObserver) {
   new ResizeObserver(function () {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(function () { fitStage(); fit(); maybeRerender(); }, 250);
+    resizeTimer = setTimeout(function () { fitStage(); fit(); maybeRerender(); updateCaret(); }, 250);
   }).observe(document.getElementById("stage"));
 }
 
@@ -568,6 +1033,13 @@ function setSearchStartToSlide(i) {
   if (!ebene || ebene.hasAttribute("hidden")) return;
   const auswahl = document.getSelection();
   if (auswahl && !auswahl.isCollapsed) return;
+
+  if (textMode) {
+    const fn = firstTextNode(ebene);
+    if (fn && auswahl) auswahl.collapse(fn, 0);
+    updateCaret();
+    return;
+  }
 
   if (document.activeElement && document.activeElement !== ebene && document.activeElement !== document.body) {
     try { document.activeElement.blur(); } catch (e) {}
@@ -1397,20 +1869,48 @@ function tick() {
   updateLadebalken();
   updateKapitelStriche();
 }
-function setRate(r) {
+function setTextContentTarget(el, txt) {
+  if (!el) return;
+  const child = el.firstElementChild;
+  if (child) child.textContent = txt;
+  else el.textContent = txt;
+}
+function renderRateLabel(r) {
+  setTextContentTarget(speedEl, fmtRate(r) + "\u00D7");
+}
+function renderVolLabel() {
+  if (!volValEl) return;
+  const muted = Boolean(audio && audio.muted);
+  setTextContentTarget(volValEl, muted ? "Stumm" : (Math.round(vol * 100) + "%"));
+}
+function setRate(r, showToast) {
   if (!audio) return;
   r = Math.min(MAXR, Math.max(MINR, Math.round(r * 100) / 100));
   audio.playbackRate = r;
-  if (speedEl) speedEl.textContent = fmtRate(r) + "\u00D7";
+  renderRateLabel(r);
   updateTimes();
+  if (showToast) toast("Tempo " + fmtRate(r) + "\u00D7");
 }
 function setVol(v) {
   if (!audio) return;
   vol = Math.max(0, Math.min(MAXV, Math.round(v * 100) / 100));
   applyVol();
   if (vol > 0) audio.muted = false;
-  if (volValEl) volValEl.textContent = Math.round(vol * 100) + "%";
+  renderVolLabel();
   toast("Lautstärke " + Math.round(vol * 100) + "%");
+}
+function toggleMute() {
+  if (!audio) return;
+  audio.muted = !audio.muted;
+  renderVolLabel();
+  toast(audio.muted ? "Stumm" : "Ton an (" + Math.round(vol * 100) + "%)");
+}
+function seekRelative(deltaSec) {
+  if (!audio) return;
+  const d = effektiveDauer() || 1e9;
+  const t = (audio.currentTime || 0) + deltaSec;
+  try { audio.currentTime = Math.max(0, Math.min(d, t)); } catch (err) {}
+  tick();
 }
 function jump(i) {
   if (HAS_AUDIO && audio) {
@@ -1498,7 +1998,7 @@ function renderLeiste(playerMode) {
   versteckeZoomUndTip(0);
   if (barMode !== null && barMode === HAS_AUDIO) return;
   if (!(barMode === null && HAS_AUDIO === INITIAL_HAS_AUDIO && barEl && barEl.children.length > 0)) {
-    if (hintLineEl) hintLineEl.innerHTML = HAS_AUDIO ? PLAYER_HINT_HTML : VIEWER_HINT_HTML;
+    syncHintline();
     if (barEl) barEl.innerHTML = HAS_AUDIO ? PLAYER_BAR_HTML : VIEWER_BAR_HTML;
   }
   barMode = HAS_AUDIO;
@@ -1514,16 +2014,26 @@ function renderLeiste(playerMode) {
 
   const fsBtn = document.getElementById("fs");
   if (fsBtn) fsBtn.addEventListener("click", vollbildUmschalten);
+  const textBtn = document.getElementById("textModeBtn");
+  if (textBtn) {
+    textBtn.classList.toggle("aktiv", textMode);
+    textBtn.setAttribute("aria-pressed", textMode ? "true" : "false");
+    textBtn.addEventListener("click", function () { setTextMode(!textMode); });
+  }
+  const helpBtn = document.getElementById("helpBtn");
+  if (helpBtn) helpBtn.addEventListener("click", toggleShortcutsModal);
 
   if (playerMode) {
     initAudioEngine();
     if (playBtn) playBtn.addEventListener("click", function () { if (spieltGewollt) pauseAudio(); else playAudio(); });
     document.getElementById("prev").addEventListener("click", function () { jump(cur > 0 ? cur - 1 : 0); });
     document.getElementById("next").addEventListener("click", function () { jump(cur + 1); });
-    document.getElementById("slower").addEventListener("click", function () { setRate(audio.playbackRate - STEP); });
-    document.getElementById("faster").addEventListener("click", function () { setRate(audio.playbackRate + STEP); });
+    document.getElementById("slower").addEventListener("click", function () { setRate(audio.playbackRate - STEP, true); });
+    document.getElementById("faster").addEventListener("click", function () { setRate(audio.playbackRate + STEP, true); });
+    if (speedEl) speedEl.addEventListener("click", function () { setRate(1, true); });
     document.getElementById("volDown").addEventListener("click", function () { setVol(vol - 0.05); });
     document.getElementById("volUp").addEventListener("click", function () { setVol(vol + 0.05); });
+    if (volValEl) volValEl.addEventListener("click", toggleMute);
     if (seek) {
       seek.addEventListener("input", function () {
         if (touchInLens) {
@@ -1586,7 +2096,7 @@ function renderLeiste(playerMode) {
     }
     setRate(audio.playbackRate || 1);
     updateTimes();
-    if (volValEl) volValEl.textContent = Math.round(vol * 100) + "%";
+    renderVolLabel();
   } else {
     document.getElementById("prev").addEventListener("click", function () { jump(cur - 1); });
     document.getElementById("next").addEventListener("click", function () { jump(cur + 1); });
@@ -1608,38 +2118,176 @@ function renderLeiste(playerMode) {
 }
 
 document.addEventListener("keydown", function (e) {
-  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (shortcutsModalEl && !shortcutsModalEl.hidden) {
+    if (e.key === "Escape" || e.key === "?" || (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === "h" || e.key === "H"))) {
+      e.preventDefault();
+      closeShortcutsModal();
+    }
+    return;
+  }
+
+  const tgt = e.target;
+  if (tgt && (tgt.isContentEditable || ((tgt.tagName === "INPUT" || tgt.tagName === "TEXTAREA" || tgt.tagName === "SELECT") && tgt.type !== "range"))) {
+    return;
+  }
+
+  if (e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    e.preventDefault();
+    toggleShortcutsModal();
+    return;
+  }
+
   if (!pdfDoc && !IS_EMBEDDED) return;
-  if (HAS_AUDIO) {
+
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === "a" || e.key === "A")) {
+    e.preventDefault();
+    selectSlideText();
+    return;
+  }
+
+  if (textMode) {
+    const wordMod = IS_MAC ? e.altKey : e.ctrlKey;
+    const edgeMod = IS_MAC ? e.metaKey : e.ctrlKey;
+    if (e.key === "Escape" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      if (hasSlideSelection()) {
+        const sel = getSelection();
+        try { sel.collapse(sel.focusNode, sel.focusOffset); } catch (err) { sel.removeAllRanges(); }
+        updateCaret(true);
+      } else {
+        setTextMode(false);
+      }
+      return;
+    }
+    if ((e.key === "t" || e.key === "T") && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      setTextMode(false);
+      return;
+    }
+    if (e.code === "Space" && HAS_AUDIO && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      if (spieltGewollt) pauseAudio(); else playAudio();
+      return;
+    }
+    if ((e.key === "PageUp" || e.key === "PageDown") && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      jump(e.key === "PageUp" ? (cur > 0 ? cur - 1 : 0) : cur + 1);
+      return;
+    }
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
-      if (e.shiftKey) {
-        const d = effektiveDauer() || 1e9;
-        const t = (audio.currentTime || 0) + (e.key === "ArrowLeft" ? -10 : 10);
-        try { audio.currentTime = Math.max(0, Math.min(d, t)); } catch (err) {}
-        tick();
+      const dir = e.key === "ArrowLeft" ? -1 : 1;
+      if (IS_MAC && e.metaKey && !e.ctrlKey && !e.altKey) {
+        moveCaretLineEdge(dir > 0, e.shiftKey, false);
       } else {
-        jump(e.key === "ArrowLeft" ? (cur > 0 ? cur - 1 : 0) : cur + 1);
+        moveCaretHorizontal(dir, wordMod ? "word" : "character", e.shiftKey);
       }
+      updateCaret(true);
+      return;
     }
-    else if (e.key === "PageUp") { e.preventDefault(); jump(cur > 0 ? cur - 1 : 0); }
-    else if (e.key === "PageDown") { e.preventDefault(); jump(cur + 1); }
-    else if (e.key === "Home") { e.preventDefault(); jump(0); }
-    else if (e.key === "End") { e.preventDefault(); jump((STARTS.length || total) - 1); }
-    else if (e.code === "Space") { e.preventDefault(); if (spieltGewollt) pauseAudio(); else playAudio(); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); setVol(vol + 0.05); }
-    else if (e.key === "ArrowDown") { e.preventDefault(); setVol(vol - 0.05); }
-    else if (e.key === "+" || e.key === "=") { e.preventDefault(); setRate(audio.playbackRate + STEP); }
-    else if (e.key === "-") { e.preventDefault(); setRate(audio.playbackRate - STEP); }
-    else if (e.key === "m" || e.key === "M") { audio.muted = !audio.muted; toast(audio.muted ? "Stumm" : "Ton an"); }
-    else if (e.key === "0") { setRate(1); }
-    else if (e.key === "f" || e.key === "F") { e.preventDefault(); vollbildUmschalten(); }
-  } else {
-    if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); jump(cur - 1); }
-    else if (e.key === "ArrowRight" || e.key === "PageDown") { e.preventDefault(); jump(cur + 1); }
-    else if (e.key === "Home") { e.preventDefault(); jump(0); }
-    else if (e.key === "End") { e.preventDefault(); jump(total - 1); }
-    else if (e.key === "f" || e.key === "F") { e.preventDefault(); vollbildUmschalten(); }
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      e.preventDefault();
+      moveCaretVertical(e.key === "ArrowUp" ? -1 : 1, e.shiftKey);
+      updateCaret(true);
+      return;
+    }
+    if (e.key === "Home" || e.key === "End") {
+      e.preventDefault();
+      moveCaretLineEdge(e.key === "End", e.shiftKey, edgeMod);
+      updateCaret(true);
+      return;
+    }
+    return;
+  }
+
+  if (hasSlideSelection()) {
+    if (e.key === "Escape" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      getSelection().removeAllRanges();
+      return;
+    }
+    if (e.shiftKey && !e.metaKey && (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "Home" || e.key === "End")) {
+      e.preventDefault();
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        const wordMod = IS_MAC ? e.altKey : e.ctrlKey;
+        moveCaretHorizontal(e.key === "ArrowLeft" ? -1 : 1, wordMod ? "word" : "character", true);
+      } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        moveCaretVertical(e.key === "ArrowUp" ? -1 : 1, true);
+      } else {
+        moveCaretLineEdge(e.key === "End", true, e.ctrlKey);
+      }
+      return;
+    }
+  }
+
+  const modStep = (e.ctrlKey || (IS_MAC && e.altKey)) && !e.metaKey && !e.shiftKey && !(e.ctrlKey && e.altKey);
+  if (HAS_AUDIO && modStep) {
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+      seekRelative(e.key === "ArrowLeft" ? -10 : 10);
+      return;
+    }
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      e.preventDefault();
+      setRate(audio.playbackRate + (e.key === "ArrowUp" ? STEP : -STEP), true);
+      return;
+    }
+  }
+
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+  if ((e.key === "t" || e.key === "T") && !e.shiftKey) {
+    e.preventDefault();
+    setTextMode(true);
+    return;
+  }
+  if ((e.key === "h" || e.key === "H") && !e.shiftKey) {
+    e.preventDefault();
+    toggleShortcutsModal();
+    return;
+  }
+  if ((e.key === "f" || e.key === "F") && !e.shiftKey) {
+    e.preventDefault();
+    vollbildUmschalten();
+    return;
+  }
+
+  if (!e.shiftKey) {
+    if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); jump(cur > 0 ? cur - 1 : 0); return; }
+    if (e.key === "ArrowRight" || e.key === "PageDown") { e.preventDefault(); jump(cur + 1); return; }
+    if (e.key === "Home") { e.preventDefault(); jump(0); return; }
+    if (e.key === "End") { e.preventDefault(); jump((HAS_AUDIO ? (STARTS.length || total) : total) - 1); return; }
+  }
+
+  if (HAS_AUDIO) {
+    if ((e.code === "Space" || e.key === "k" || e.key === "K") && !e.shiftKey) {
+      e.preventDefault();
+      if (spieltGewollt) pauseAudio(); else playAudio();
+    } else if ((e.key === "j" || e.key === "J") && !e.shiftKey) {
+      e.preventDefault();
+      seekRelative(-10);
+    } else if ((e.key === "l" || e.key === "L") && !e.shiftKey) {
+      e.preventDefault();
+      seekRelative(10);
+    } else if (e.key === "ArrowUp" && !e.shiftKey) {
+      e.preventDefault();
+      setVol(vol + 0.05);
+    } else if (e.key === "ArrowDown" && !e.shiftKey) {
+      e.preventDefault();
+      setVol(vol - 0.05);
+    } else if (e.key === "+" || e.key === "=" || e.key === ">") {
+      e.preventDefault();
+      setRate(audio.playbackRate + STEP, true);
+    } else if (e.key === "-" || e.key === "<") {
+      e.preventDefault();
+      setRate(audio.playbackRate - STEP, true);
+    } else if ((e.key === "m" || e.key === "M") && !e.shiftKey) {
+      e.preventDefault();
+      toggleMute();
+    } else if (e.key === "0" && !e.shiftKey) {
+      e.preventDefault();
+      setRate(1, true);
+    }
   }
 });
 
@@ -1663,6 +2311,7 @@ let ruheTimer = null;
 function ruheNeu() {
   document.body.classList.remove("ruhe");
   clearTimeout(ruheTimer);
+  if (textMode || (shortcutsModalEl && !shortcutsModalEl.hidden)) return;
   if (!IS_EMBEDDED && !pdfDoc) return;
   ruheTimer = setTimeout(function () { document.body.classList.add("ruhe"); }, 5000);
 }
@@ -1803,8 +2452,7 @@ async function loadPdfBytes(pdfBytes, fallbackTitle, sourceInfo, restoreState) {
   textLayerJobs.length = 0;
   textLayers.length = 0;
   tl.textContent = "";
-  const markEl = document.getElementById("mark");
-  if (markEl) markEl.textContent = "";
+  setTextMode(false, true);
 
   try {
     const workerBytes = await entnehmeBytes("b64-worker");
@@ -1868,7 +2516,7 @@ async function loadPdfBytes(pdfBytes, fallbackTitle, sourceInfo, restoreState) {
         audio.src = aktuelleAudioUrl;
         audio.muted = Boolean(restoreState && restoreState.muted);
         applyVol();
-        if (volValEl) volValEl.textContent = Math.round(vol * 100) + "%";
+        renderVolLabel();
         const targetRate = (restoreState && typeof restoreState.playbackRate === "number" && isFinite(restoreState.playbackRate))
           ? restoreState.playbackRate
           : 1;

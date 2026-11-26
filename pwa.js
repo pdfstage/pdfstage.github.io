@@ -3,7 +3,7 @@
 (function (global) {
   "use strict";
 
-  var APP_VERSION = "0.8.3";
+  var APP_VERSION = "0.8.4";
   var HANDOFF_DB_NAME = "pdfstage-handoff";
   var HANDOFF_DB_VERSION = 1;
   var HANDOFF_STORE = "handoffs";

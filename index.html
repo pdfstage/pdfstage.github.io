@@ -7,10 +7,11 @@
 <title>pdfstage</title>
 <link rel="manifest" href="./manifest.json">
 <link rel="icon" type="image/svg+xml" href="./icon.svg">
+<script src="./pwa.js" defer></script>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
-  #openOverlay[hidden], #wrap[hidden], #fileInput[hidden] { display: none !important; }
+  #openOverlay[hidden], #wrap[hidden], #fileInput[hidden], #updateBtn[hidden] { display: none !important; }
   body { margin:0; background:#111; color:#eee; font-family:system-ui,'Segoe UI',sans-serif; display:flex; flex-direction:column; height:100vh; }
   header { padding:10px 16px 4px; font-size:14px; color:#ccc; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
   .hdr-right { display:flex; align-items:center; gap:10px; }
@@ -32,6 +33,9 @@
   .open-alt a:hover { color:#fff; }
   #openBtn, .hdr-link { padding:4px 10px; font-size:12.5px; background:#262626; color:#eee; border:1px solid #444; border-radius:6px; text-decoration:none; }
   .hdr-link:hover { background:#383838; }
+  #updateBtn { padding:4px 10px; font-size:12.5px; background:#29181d; color:#ffd4dc; border:1px solid #ff335c; border-radius:6px; cursor:pointer; }
+  #updateBtn:hover:not(:disabled) { background:#3d1f28; }
+  #updateBtn:disabled { opacity:.6; cursor:wait; }
   body.dragover #stage { outline:2px dashed #ff0033; outline-offset:-8px; }
 
   #tl { position:absolute; left:0; top:0; overflow:hidden; line-height:1; text-size-adjust:none; transform-origin:0 0; pointer-events:none; mix-blend-mode:multiply; }
@@ -137,7 +141,8 @@
   #timeO, #timeS { min-width:76px; }
   #speed, #volVal { min-width:54px; }
   #counter { min-width:64px; }
-  #toast { position:fixed; left:50%; top:70px; transform:translateX(-50%); background:#000c; color:#fff; padding:8px 18px; border-radius:8px; font-size:15px; opacity:0; transition:opacity .25s; pointer-events:none; }
+  #toast { position:fixed; left:50%; top:70px; transform:translateX(-50%); background:#000c; color:#fff; padding:8px 18px; border-radius:8px; font-size:15px; opacity:0; transition:opacity .25s; pointer-events:none; z-index:40; }
+  #toast.warn { background:#2b1519f2; border:1px solid #ff4d6d; color:#ffd6de; }
   #hintline { position:absolute; left:0; right:0; bottom:100%; text-align:center; padding:6px 16px 10px; line-height:1.9; pointer-events:none; background:linear-gradient(to top, #111 72%, #1110); }
   #hintline kbd { background:#2a2a2a; border:1px solid #555; border-bottom-width:2px; border-radius:4px; padding:1px 6px; font-size:11.5px; font-family:inherit; color:#ddd; }
   header, #hintline { transition:opacity .4s; }
@@ -154,6 +159,7 @@
   <div id="deckTitle" inert>pdfstage</div>
   <div class="hdr-right">
     <div id="folie" class="hint" inert></div>
+    <button id="updateBtn" type="button" hidden title="Neue App-Version laden ohne Fortschritt zu verlieren">Update verf&uuml;gbar &ndash; neu laden</button>
     <a class="hdr-link" href="./cast/" title="PowerPoint + PDF im Browser zusammenführen">/cast</a>
     <button id="openBtn" type="button" title="PDF-Datei öffnen">PDF öffnen</button>
     <input id="fileInput" type="file" accept=".pdf,application/pdf" hidden>
@@ -391,7 +397,7 @@ document.addEventListener("copy", function (e) {
   e.preventDefault();
 });
 
-let pdfDoc = null, cur = -1, renderToken = 0, total = STARTS.length || 1;
+let pdfDoc = null, currentOcConfig = null, cur = -1, renderToken = 0, total = STARTS.length || 1;
 let pageW = 960, pageH = 540, lastScale = 0;
 let loadToken = 0;
 
@@ -978,11 +984,15 @@ async function show(i, vomSuchen) {
     cv.height = Math.round(viewport.height * dpr);
     lastScale = scale;
     fitStage();
-    const task = page.render({
+    const renderOpts = {
       canvasContext: cv.getContext("2d"),
       viewport: viewport,
       transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null
-    });
+    };
+    if (currentOcConfig) {
+      renderOpts.optionalContentConfigPromise = Promise.resolve(currentOcConfig);
+    }
+    const task = page.render(renderOpts);
     canvasRender = task;
     try { await task.promise; }
     finally { if (canvasRender === task) canvasRender = null; }
@@ -1218,13 +1228,14 @@ function slideAt(t) {
   for (let i = STARTS.length - 1; i >= 0; i--) if (t >= STARTS[i] - 0.05) return i;
   return 0;
 }
-function toast(msg) {
+function toast(msg, dauer, istWarn) {
   const t = document.getElementById("toast");
   if (!t) return;
+  t.classList.toggle("warn", Boolean(istWarn));
   t.textContent = msg;
   t.style.opacity = "1";
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(function () { t.style.opacity = "0"; }, 1100);
+  toastTimer = setTimeout(function () { t.style.opacity = "0"; }, typeof dauer === "number" ? dauer : 1100);
 }
 function resumeAudio() {
   if (actx && actx.state === "suspended") actx.resume();
@@ -1238,7 +1249,18 @@ function playAudio() {
   if (!audio) return;
   spieltGewollt = true;
   resumeAudio();
-  if (audio.paused) audio.play();
+  if (audio.paused) {
+    const p = audio.play();
+    if (p && typeof p.catch === "function") {
+      p.catch(function (err) {
+        spieltGewollt = false;
+        if (playBtn && playBtn.firstElementChild) playBtn.firstElementChild.textContent = "\u25B6";
+        if (err && err.name === "NotAllowedError") {
+          toast("Bitte Leertaste oder Play drücken", 3500, false);
+        }
+      });
+    }
+  }
 }
 
 function pauseAudio() {
@@ -1611,8 +1633,43 @@ function detectAudioMime(filename, bytes, explicitMime) {
 
 window.detectAudioMime = detectAudioMime;
 
-async function loadPdfBytes(pdfBytes, fallbackTitle) {
+let currentDocSource = null;
+
+function waitForAudioReady(el) {
+  if (!el) return Promise.resolve();
+  if (el.readyState >= 1 && isFinite(el.duration) && el.duration > 0) {
+    return Promise.resolve();
+  }
+  return new Promise(function (resolve) {
+    let done = false;
+    const finish = function () {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      el.removeEventListener("loadedmetadata", finish);
+      el.removeEventListener("canplay", finish);
+      el.removeEventListener("error", finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, 3000);
+    el.addEventListener("loadedmetadata", finish, { once: true });
+    el.addEventListener("canplay", finish, { once: true });
+    el.addEventListener("error", finish, { once: true });
+  });
+}
+
+async function loadPdfBytes(pdfBytes, fallbackTitle, sourceInfo, restoreState) {
   const myToken = ++loadToken;
+  const srcBlob = (sourceInfo && sourceInfo.blob) || new Blob([pdfBytes], { type: "application/pdf" });
+  const nextSource = {
+    blob: srcBlob,
+    fileHandle: (sourceInfo && sourceInfo.fileHandle) || null,
+    name: (sourceInfo && sourceInfo.name) || (fallbackTitle ? fallbackTitle + ".pdf" : "dokument.pdf"),
+    size: (sourceInfo && typeof sourceInfo.size === "number") ? sourceInfo.size : srcBlob.size,
+    lastModified: (sourceInfo && sourceInfo.lastModified) || 0,
+    fallbackTitle: fallbackTitle || ""
+  };
+
   document.body.classList.remove("fehler");
   if (folieEl) {
     folieEl.classList.remove("fehler");
@@ -1629,6 +1686,7 @@ async function loadPdfBytes(pdfBytes, fallbackTitle) {
   if (pdfDoc) {
     const oldDoc = pdfDoc;
     pdfDoc = null;
+    currentOcConfig = null;
     if (typeof oldDoc.destroy === "function") {
       try { await oldDoc.destroy(); } catch (e) {}
     }
@@ -1653,6 +1711,8 @@ async function loadPdfBytes(pdfBytes, fallbackTitle) {
       if (typeof doc.destroy === "function") { try { await doc.destroy(); } catch (e) {} }
       return;
     }
+
+    currentDocSource = nextSource;
 
     let atts = null;
     try { atts = await doc.getAttachments(); } catch (e) { atts = null; }
@@ -1682,6 +1742,11 @@ async function loadPdfBytes(pdfBytes, fallbackTitle) {
     TOTAL_DUR = (meta && typeof meta.duration === "number" && meta.duration > 0) ? meta.duration : 0;
 
     if (nextHasAudio) {
+      if (restoreState && typeof restoreState.volume === "number" && isFinite(restoreState.volume)) {
+        vol = Math.max(0, Math.min(MAXV, Math.round(restoreState.volume * 100) / 100));
+      } else {
+        vol = 1;
+      }
       renderLeiste(true);
       if (audioAtt && audioAtt.content) {
         const alteUrl = aktuelleAudioUrl;
@@ -1689,9 +1754,13 @@ async function loadPdfBytes(pdfBytes, fallbackTitle) {
         const blob = audioMime ? new Blob([audioAtt.content], { type: audioMime }) : new Blob([audioAtt.content]);
         aktuelleAudioUrl = URL.createObjectURL(blob);
         audio.src = aktuelleAudioUrl;
-        audio.playbackRate = 1;
+        audio.muted = Boolean(restoreState && restoreState.muted);
         applyVol();
-        setRate(1);
+        if (volValEl) volValEl.textContent = Math.round(vol * 100) + "%";
+        const targetRate = (restoreState && typeof restoreState.playbackRate === "number" && isFinite(restoreState.playbackRate))
+          ? restoreState.playbackRate
+          : 1;
+        setRate(targetRate);
         if (alteUrl) URL.revokeObjectURL(alteUrl);
       }
       geladenBis = TOTAL_DUR;
@@ -1710,16 +1779,68 @@ async function loadPdfBytes(pdfBytes, fallbackTitle) {
     }
 
     pdfDoc = doc;
+    currentOcConfig = null;
+    try {
+      if (typeof doc.getOptionalContentConfig === "function") {
+        const ocConfig = await doc.getOptionalContentConfig();
+        if (ocConfig && typeof ocConfig.getGroups === "function") {
+          const groups = ocConfig.getGroups();
+          if (groups) {
+            for (const [id, grp] of Object.entries(groups)) {
+              if (grp && grp.name === "pdfstage-hint") {
+                ocConfig.setVisibility(id, false);
+              }
+            }
+          }
+          currentOcConfig = ocConfig;
+        }
+      }
+    } catch (e) { currentOcConfig = null; }
     total = doc.numPages;
     if (slidebar) slidebar.max = total;
     if (openOverlayEl) openOverlayEl.hidden = true;
     if (wrapEl) wrapEl.hidden = false;
     ruheNeu();
 
-    await show(0);
+    let targetPage = 0;
+    if (restoreState && typeof restoreState.currentPage === "number" && isFinite(restoreState.currentPage)) {
+      targetPage = Math.max(0, Math.min(total - 1, Math.floor(restoreState.currentPage)));
+    }
+    if (nextHasAudio && restoreState && audio) {
+      await waitForAudioReady(audio);
+      if (myToken !== loadToken) return;
+      const durLimit = effektiveDauer();
+      let targetTime = (typeof restoreState.currentTime === "number" && isFinite(restoreState.currentTime) && restoreState.currentTime >= 0)
+        ? restoreState.currentTime
+        : 0;
+      if (durLimit > 0) targetTime = Math.min(durLimit, targetTime);
+      try { audio.currentTime = targetTime; } catch (e) {}
+      if (typeof restoreState.currentPage !== "number" && STARTS.length > 0) {
+        targetPage = slideAt(targetTime);
+      }
+    }
+
+    await show(targetPage);
     if (myToken !== loadToken) return;
     buildAllTextLayers();
     if (HAS_AUDIO) tick();
+
+    if (restoreState) {
+      if (nextHasAudio && restoreState.wasPlaying && audio) {
+        spieltGewollt = true;
+        resumeAudio();
+        try {
+          await audio.play();
+          toast("Update geladen");
+        } catch (err) {
+          spieltGewollt = false;
+          if (playBtn && playBtn.firstElementChild) playBtn.firstElementChild.textContent = "\u25B6";
+          toast("Update geladen – Leertaste oder Play zum Fortsetzen", 4500, false);
+        }
+      } else {
+        toast("Update geladen");
+      }
+    }
   } catch (e) {
     if (myToken === loadToken) showErr("PDF: " + e.message);
   }
@@ -1743,15 +1864,49 @@ if (IS_EMBEDDED) {
   renderLeiste(false);
   entnehmeBytes("b64-worker").then(initialisierePdfWorker).catch(function () {});
 
-  async function openLocalFile(file) {
+  async function openLocalFile(file, fileHandle) {
     if (!file) return;
     try {
       const buf = await file.arrayBuffer();
       const base = file.name.replace(/\.(pdfstage|stage)\.pdf$/i, "").replace(/\.pdf$/i, "");
-      await loadPdfBytes(new Uint8Array(buf), base || file.name);
+      const title = base || file.name;
+      await loadPdfBytes(new Uint8Array(buf), title, {
+        blob: file,
+        fileHandle: fileHandle || null,
+        name: file.name,
+        size: file.size,
+        lastModified: file.lastModified || 0,
+        fallbackTitle: title
+      });
     } catch (e) {
       showErr("Datei: " + e.message);
     }
+  }
+
+  function captureCurrentState() {
+    const src = currentDocSource;
+    return {
+      state: {
+        currentTime: (HAS_AUDIO && audio && isFinite(audio.currentTime)) ? audio.currentTime : 0,
+        wasPlaying: Boolean(HAS_AUDIO && audio && (!audio.paused || spieltGewollt)),
+        playbackRate: (HAS_AUDIO && audio && isFinite(audio.playbackRate)) ? audio.playbackRate : 1,
+        volume: vol,
+        muted: Boolean(HAS_AUDIO && audio && audio.muted),
+        currentPage: cur >= 0 ? cur : 0,
+        autoFollow: Boolean(HAS_AUDIO),
+        viewMode: HAS_AUDIO ? "audio" : "viewer",
+        zoom: lastScale || 0,
+        fullscreen: Boolean(document.fullscreenElement || document.webkitFullscreenElement),
+        search: { query: "", matchIndex: 0 },
+        panels: {}
+      },
+      fileMeta: src ? {
+        name: src.name,
+        size: src.size,
+        lastModified: src.lastModified,
+        fallbackTitle: src.fallbackTitle
+      } : null
+    };
   }
 
   const fileInput = document.getElementById("fileInput");
@@ -1761,7 +1916,7 @@ if (IS_EMBEDDED) {
   if (openHeroBtn && fileInput) openHeroBtn.addEventListener("click", function () { fileInput.value = ""; fileInput.click(); });
   if (fileInput) {
     fileInput.addEventListener("change", function () {
-      if (fileInput.files && fileInput.files[0]) openLocalFile(fileInput.files[0]);
+      if (fileInput.files && fileInput.files[0]) openLocalFile(fileInput.files[0], null);
     });
   }
 
@@ -1772,19 +1927,140 @@ if (IS_EMBEDDED) {
   document.addEventListener("dragleave", function (e) {
     if (e.relatedTarget === null) document.body.classList.remove("dragover");
   });
-  document.addEventListener("drop", function (e) {
+  document.addEventListener("drop", async function (e) {
     e.preventDefault();
     document.body.classList.remove("dragover");
     const files = e.dataTransfer && e.dataTransfer.files;
-    if (files && files[0]) openLocalFile(files[0]);
+    const firstFile = files && files[0];
+    if (!firstFile) return;
+    // Synchronously start handle lookup before dataTransfer.items clears after this tick.
+    let handlePromise = Promise.resolve(null);
+    try {
+      const items = e.dataTransfer && e.dataTransfer.items;
+      if (items && items[0] && typeof items[0].getAsFileSystemHandle === "function") {
+        handlePromise = items[0].getAsFileSystemHandle().catch(function () { return null; });
+      }
+    } catch (err) {}
+    const handle = await handlePromise;
+    const fileHandle = (handle && handle.kind === "file") ? handle : null;
+    openLocalFile(firstFile, fileHandle);
+  });
+
+  let handoffRestoredThisLoad = false;
+  const startupPwaPromise = new Promise(function (resolve) {
+    const setupPwa = async function () {
+      const updateBtn = document.getElementById("updateBtn");
+      try {
+        if (!window.pdfstagePwa) {
+          resolve();
+          return;
+        }
+        window.pdfstagePwa.cleanupStaleHandoffs().catch(function () {});
+
+        const pwa = window.pdfstagePwa.initPwa({
+          onUpdateAvailable: function () {
+            if (!updateBtn) return;
+            updateBtn.hidden = false;
+            updateBtn.disabled = false;
+            updateBtn.textContent = "Update verf\u00fcgbar \u2013 neu laden";
+          },
+          onUpdateUnavailable: function () {
+            if (!updateBtn) return;
+            updateBtn.hidden = true;
+            updateBtn.disabled = false;
+            toast("App ist bereits aktuell.");
+          },
+          onBusyChange: function (busy) {
+            if (!updateBtn) return;
+            updateBtn.disabled = busy;
+            updateBtn.textContent = busy ? "Aktualisiere \u2026" : "Update verf\u00fcgbar \u2013 neu laden";
+          },
+          onBeforeReload: async function () {
+            if (!pdfDoc || !currentDocSource || !currentDocSource.blob) return true;
+            let pdfBlob = currentDocSource.blob;
+            if (currentDocSource.fileHandle && typeof currentDocSource.fileHandle.getFile === "function") {
+              try {
+                pdfBlob = await currentDocSource.fileHandle.getFile();
+              } catch (err) {}
+            }
+            const snap = captureCurrentState();
+            const handoffId = window.pdfstagePwa.generateHandoffId();
+            await window.pdfstagePwa.saveHandoff({
+              id: handoffId,
+              pdfBlob: pdfBlob,
+              fileHandle: currentDocSource.fileHandle || null,
+              state: snap.state,
+              fileMeta: snap.fileMeta,
+              createdAt: Date.now()
+            });
+            window.pdfstagePwa.setSessionHandoffId(handoffId);
+            return true;
+          },
+          onError: function (err) {
+            window.pdfstagePwa.clearSessionHandoffId();
+            const isQuota = err && err.name === "QuotaExceededError";
+            const msg = isQuota
+              ? "Update abgebrochen: Zwischenspeicher voll – Dokument bleibt ge\u00f6ffnet."
+              : "Update abgebrochen: Dokument konnte nicht zwischengespeichert werden – bleibt ge\u00f6ffnet.";
+            toast(msg, 6000, true);
+          }
+        });
+
+        if (updateBtn) {
+          updateBtn.addEventListener("click", function () {
+            pwa.triggerUpdate();
+          });
+        }
+
+        window.__pdfstagePwa = {
+          controller: pwa,
+          captureCurrentState: captureCurrentState,
+          getCurrentSource: function () { return currentDocSource; }
+        };
+
+        const hid = window.pdfstagePwa.takeSessionHandoffId();
+        if (hid) {
+          const rec = await window.pdfstagePwa.consumeHandoff(hid);
+          if (rec && rec.pdfBlob) {
+            const fallback = (rec.fileMeta && rec.fileMeta.fallbackTitle)
+              || ((rec.fileMeta && rec.fileMeta.name) ? rec.fileMeta.name.replace(/\.(pdfstage|stage)\.pdf$/i, "").replace(/\.pdf$/i, "") : "pdfstage");
+            const buf = await rec.pdfBlob.arrayBuffer();
+            handoffRestoredThisLoad = true;
+            await loadPdfBytes(new Uint8Array(buf), fallback, {
+              blob: rec.pdfBlob,
+              fileHandle: rec.fileHandle || null,
+              name: (rec.fileMeta && rec.fileMeta.name) || "dokument.pdf",
+              size: (rec.fileMeta && rec.fileMeta.size) || rec.pdfBlob.size,
+              lastModified: (rec.fileMeta && rec.fileMeta.lastModified) || 0,
+              fallbackTitle: fallback
+            }, rec.state || null);
+          }
+        }
+      } catch (err) {
+        toast("Wiederherstellung nach Update fehlgeschlagen: " + (err && err.message ? err.message : err), 6000, true);
+      } finally {
+        resolve();
+      }
+    };
+
+    if (window.pdfstagePwa) {
+      setupPwa();
+    } else if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", setupPwa, { once: true });
+    } else {
+      resolve();
+    }
   });
 
   if ("launchQueue" in window && typeof window.launchQueue.setConsumer === "function") {
     window.launchQueue.setConsumer(async function (launchParams) {
       if (!launchParams || !launchParams.files || !launchParams.files.length) return;
       try {
-        const file = await launchParams.files[0].getFile();
-        await openLocalFile(file);
+        await startupPwaPromise;
+        if (handoffRestoredThisLoad) return;
+        const fileHandle = launchParams.files[0];
+        const file = await fileHandle.getFile();
+        await openLocalFile(file, fileHandle);
       } catch (e) {
         showErr("Datei: " + e.message);
       }
@@ -1797,17 +2073,20 @@ if (IS_EMBEDDED) {
       try { window.opener.postMessage({ type: "pdfstage:ready" }, location.origin); } catch (err) {}
     } else if (e.data.type === "pdfstage:load" && e.data.bytes) {
       var bytes = e.data.bytes instanceof Uint8Array ? e.data.bytes : new Uint8Array(e.data.bytes);
-      loadPdfBytes(bytes, e.data.title || "pdfstage");
+      var blob = new Blob([bytes], { type: "application/pdf" });
+      var title = e.data.title || "pdfstage";
+      loadPdfBytes(bytes, title, {
+        blob: blob,
+        fileHandle: null,
+        name: title + ".stage.pdf",
+        size: bytes.byteLength,
+        lastModified: Date.now(),
+        fallbackTitle: title
+      });
     }
   });
   if (window.opener && location.hash === "#cast") {
     try { window.opener.postMessage({ type: "pdfstage:ready" }, location.origin); } catch (err) {}
-  }
-
-  if (location.protocol !== "file:" && "serviceWorker" in navigator) {
-    window.addEventListener("load", function () {
-      navigator.serviceWorker.register("./sw.js").catch(function () {});
-    });
   }
 }
 </script>

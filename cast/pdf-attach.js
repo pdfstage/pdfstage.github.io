@@ -953,12 +953,170 @@ function writeXRefRow(buf, idx, typ, f1, f2, offsetBytes) {
   buf[idx + 1 + offsetBytes] = f2 & 0xff;
 }
 
+const HINT_PREFIX = 'pdfstage-hint';
+const HINT_URI = 'https://pdfstage.github.io/';
+// WinAnsiEncoding escapes: \344 = 'ä', \374 = 'ü'
+const HINT_TEXT_WINANSI = 'Enth\\344lt Audio f\\374r pdfstage.github.io';
+
+function pdfNumberVal(val) {
+  if (!val) return null;
+  if (val.kind === 'int') return val.intVal;
+  if (val.kind === 'real') {
+    const n = Number(val.raw);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function pdfRectNumbers(val) {
+  if (!val || val.kind !== 'array' || val.items.length !== 4) return null;
+  const nums = val.items.map(pdfNumberVal);
+  if (nums.some((n) => n === null)) return null;
+  return [
+    Math.min(nums[0], nums[2]),
+    Math.min(nums[1], nums[3]),
+    Math.max(nums[0], nums[2]),
+    Math.max(nums[1], nums[3]),
+  ];
+}
+
+function fmtCoord(n) {
+  return Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000);
+}
+
+function fmtRect(rect) {
+  return `[${rect.map(fmtCoord).join(' ')}]`;
+}
+
+async function resolveFirstPage(idx, catVal) {
+  const pagesRef = dictGet(catVal, 'Pages');
+  if (!pagesRef) return null;
+
+  async function walk(nodeRef, inhBox, inhCrop, inhRotate, depth) {
+    if (depth > 32) return null;
+    const node = await idx.resolveValue(nodeRef);
+    if (!node || node.kind !== 'dict') return null;
+
+    const media = pdfRectNumbers(dictGet(node, 'MediaBox')) || inhBox;
+    const crop = pdfRectNumbers(dictGet(node, 'CropBox')) || inhCrop;
+    const rotVal = dictGet(node, 'Rotate');
+    const rot = (rotVal && rotVal.kind === 'int') ? rotVal.intVal : inhRotate;
+
+    const typeVal = dictGet(node, 'Type');
+    if (typeVal && typeVal.kind === 'name' && typeVal.raw === 'Page') {
+      if (nodeRef.kind !== 'ref') return null;
+      return {
+        objNum: nodeRef.objNum,
+        dict: node.dict,
+        box: crop || media || [0, 0, 720, 540],
+        rotate: rot || 0,
+      };
+    }
+
+    const kidsRaw = dictGet(node, 'Kids');
+    if (!kidsRaw) return null;
+    const kids = await idx.resolveValue(kidsRaw);
+    if (!kids || kids.kind !== 'array') return null;
+    for (const kid of kids.items) {
+      const found = await walk(kid, media, crop, rot, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  return walk(pagesRef, null, null, 0, 0);
+}
+
+function mapVisualRectToPdf(box, rotateDeg, vx0, vy0, vx1, vy1) {
+  const [minX, minY, maxX, maxY] = box;
+  const rot = ((rotateDeg % 360) + 360) % 360;
+  function mapPt(vx, vy) {
+    if (rot === 90) return [maxX - vy, minY + vx];
+    if (rot === 180) return [maxX - vx, maxY - vy];
+    if (rot === 270) return [minX + vy, maxY - vx];
+    return [minX + vx, minY + vy];
+  }
+  const [ax, ay] = mapPt(vx0, vy0);
+  const [bx, by] = mapPt(vx1, vy1);
+  return [
+    Math.min(ax, bx),
+    Math.min(ay, by),
+    Math.max(ax, bx),
+    Math.max(ay, by),
+  ];
+}
+
+function buildHintAppearanceStream(w, h, closeW) {
+  const x0 = 0.375;
+  const y0 = 0.375;
+  const x1 = w - 0.375;
+  const y1 = h - 0.375;
+  const r = (y1 - y0) / 2;
+  const k = 0.55228475 * r;
+  const divX = w - closeW;
+  const cx = divX + closeW / 2;
+  const cy = h / 2;
+
+  const parts = [
+    'q',
+    '/GS1 gs',
+    '0.09 0.10 0.13 rg',
+    '0.38 0.41 0.49 RG',
+    '0.75 w',
+    // Rounded pill contour (clockwise/CCW cubic Bézier caps)
+    `${fmtCoord(x0 + r)} ${fmtCoord(y0)} m`,
+    `${fmtCoord(x1 - r)} ${fmtCoord(y0)} l`,
+    `${fmtCoord(x1 - r + k)} ${fmtCoord(y0)} ${fmtCoord(x1)} ${fmtCoord(y0 + r - k)} ${fmtCoord(x1)} ${fmtCoord(y0 + r)} c`,
+    `${fmtCoord(x1)} ${fmtCoord(y1 - r + k)} ${fmtCoord(x1 - r + k)} ${fmtCoord(y1)} ${fmtCoord(x1 - r)} ${fmtCoord(y1)} c`,
+    `${fmtCoord(x0 + r)} ${fmtCoord(y1)} l`,
+    `${fmtCoord(x0 + r - k)} ${fmtCoord(y1)} ${fmtCoord(x0)} ${fmtCoord(y1 - r + k)} ${fmtCoord(x0)} ${fmtCoord(y1 - r)} c`,
+    `${fmtCoord(x0)} ${fmtCoord(y0 + r - k)} ${fmtCoord(x0 + r - k)} ${fmtCoord(y0)} ${fmtCoord(x0 + r)} ${fmtCoord(y0)} c`,
+    'B',
+    // Vector speaker body + cone
+    '1 1 1 rg 1 1 1 RG',
+    '10 9.2 m 12.6 9.2 l 15.8 6.8 l 15.8 15.2 l 12.6 12.8 l 10 12.8 l h f',
+    // Sound wave arcs
+    '0.9 w 1 J',
+    '17.2 8.7 m 18.6 9.9 18.6 12.1 17.2 13.3 c S',
+    '18.8 7.5 m 20.9 9.4 20.9 12.6 18.8 14.5 c S',
+    // Label in WinAnsi Helvetica
+    `BT /F1 9.5 Tf 26 7.5 Td (${HINT_TEXT_WINANSI}) Tj ET`,
+    // Divider and close 'x'
+    `0.38 0.41 0.49 RG 0.6 w ${fmtCoord(divX)} 4.5 m ${fmtCoord(divX)} ${fmtCoord(h - 4.5)} l S`,
+    `0.78 0.80 0.86 RG 1.1 w 1 J ${fmtCoord(cx - 3.2)} ${fmtCoord(cy - 3.2)} m ${fmtCoord(cx + 3.2)} ${fmtCoord(cy + 3.2)} l ${fmtCoord(cx - 3.2)} ${fmtCoord(cy + 3.2)} m ${fmtCoord(cx + 3.2)} ${fmtCoord(cy - 3.2)} l S`,
+    'Q',
+  ];
+  return parts.join('\n') + '\n';
+}
+
+function appendUniqueRef(items, objNum) {
+  if (!items.some((it) => it.kind === 'ref' && it.objNum === objNum)) {
+    items.push({ kind: 'ref', objNum, genNum: 0, raw: `${objNum} 0 R` });
+  }
+}
+
+function groupContiguousObjNums(objNums) {
+  const sorted = [...new Set(objNums)].sort((a, b) => a - b);
+  const groups = [];
+  for (const n of sorted) {
+    const last = groups[groups.length - 1];
+    if (last && last.start + last.count === n) {
+      last.count++;
+    } else {
+      groups.push({ start: n, count: 1 });
+    }
+  }
+  return groups;
+}
+
 /**
  * Attaches files via PDF Incremental Update without altering the original PDF prefix bytes.
+ * Optionally attaches a non-printable OCG viewer-hint pill (`pdfstage-hint`) on page 1.
  * @param {Uint8Array} pdfBytes
  * @param {Array<{name: string, mime?: string, description?: string, data: Uint8Array, compress?: boolean}>} files
+ * @param {{ viewerHint?: boolean }} [options]
  */
-export async function attachFilesToPdf(pdfBytes, files) {
+export async function attachFilesToPdf(pdfBytes, files, options = {}) {
   if (!pdfBytes || pdfBytes.length === 0) throw new Error('PDF ist leer');
   const idx = await parsePDFIndex(pdfBytes);
   if (idx.rootObjNum <= 0) throw new Error('PDF hat keinen /Root-Catalog');
@@ -981,6 +1139,61 @@ export async function attachFilesToPdf(pdfBytes, files) {
     } catch { /* keep going */ }
   }
 
+  const wantHint = Boolean(options && options.viewerHint);
+  let page1 = null;
+  let existingPage1Annots = [];
+  let existingOcProps = null;
+  let existingOcgNum = 0;
+
+  if (wantHint) {
+    page1 = await resolveFirstPage(idx, catVal);
+    if (page1) {
+      const annotsRaw = dictGet({ kind: 'dict', dict: page1.dict }, 'Annots');
+      if (annotsRaw) {
+        try {
+          const annotsArr = await idx.resolveValue(annotsRaw);
+          if (annotsArr && annotsArr.kind === 'array') {
+            for (const item of annotsArr.items) {
+              let nm = '';
+              try {
+                const resolved = await idx.resolveValue(item);
+                const nmVal = resolved && resolved.kind === 'dict' ? dictGet(resolved, 'NM') : null;
+                if (nmVal) nm = decodePDFStringVal(nmVal);
+              } catch { /* keep unknown annot */ }
+              if (nm.startsWith(HINT_PREFIX)) continue;
+              existingPage1Annots.push(item);
+            }
+          }
+        } catch { /* keep empty */ }
+      }
+
+      const ocpRaw = dictGet(catVal, 'OCProperties');
+      if (ocpRaw) {
+        try {
+          const resolvedOcp = await idx.resolveValue(ocpRaw);
+          if (resolvedOcp && resolvedOcp.kind === 'dict') {
+            existingOcProps = resolvedOcp;
+            const ocgsRaw = dictGet(resolvedOcp, 'OCGs');
+            const ocgsArr = ocgsRaw ? await idx.resolveValue(ocgsRaw) : null;
+            if (ocgsArr && ocgsArr.kind === 'array') {
+              for (const ocgItem of ocgsArr.items) {
+                if (ocgItem.kind !== 'ref') continue;
+                try {
+                  const ocgDict = await idx.resolveValue(ocgItem);
+                  const nmVal = ocgDict && ocgDict.kind === 'dict' ? dictGet(ocgDict, 'Name') : null;
+                  if (nmVal && decodePDFStringVal(nmVal) === HINT_PREFIX) {
+                    existingOcgNum = ocgItem.objNum;
+                    break;
+                  }
+                } catch { /* ignore */ }
+              }
+            }
+          }
+        } catch { /* ignore */ }
+      }
+    }
+  }
+
   const sortedFiles = [...files].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 
   const out = new ByteBuilder();
@@ -992,7 +1205,8 @@ export async function attachFilesToPdf(pdfBytes, files) {
 
   let nextObj = idx.maxObjNum;
   if (nextObj <= idx.rootObjNum) nextObj = idx.rootObjNum + 1;
-  const firstNewObj = nextObj;
+  if (page1 && nextObj <= page1.objNum) nextObj = page1.objNum + 1;
+
   const newOffsets = new Map();
   const attached = [];
 
@@ -1042,30 +1256,200 @@ export async function attachFilesToPdf(pdfBytes, files) {
   const extraNames = existingNamesDict.map((kv) => ` /${escapePDFName(kv.key)} ${serializePDFVal(kv.val)}`).join('');
   out.pushAscii(`${namesObj} 0 obj\n<<${extraNames} /EmbeddedFiles ${efTreeObj} 0 R >>\nendobj\n`);
 
+  let ocPropsVal = null;
+  if (wantHint && page1) {
+    let ocgObjNum = existingOcgNum;
+    if (!ocgObjNum) {
+      ocgObjNum = nextObj++;
+      newOffsets.set(ocgObjNum, out.length);
+      out.pushAscii(
+        `${ocgObjNum} 0 obj\n<< /Type /OCG /Name (${HINT_PREFIX}) /Usage << /Print << /PrintState /OFF >> /View << /ViewState /ON >> >> >>\nendobj\n`,
+      );
+    }
+    const ocgRef = { kind: 'ref', objNum: ocgObjNum, genNum: 0, raw: `${ocgObjNum} 0 R` };
+
+    const rot = ((page1.rotate % 360) + 360) % 360;
+    const boxW = page1.box[2] - page1.box[0];
+    const boxH = page1.box[3] - page1.box[1];
+    const visW = (rot === 90 || rot === 270) ? boxH : boxW;
+    const visH = (rot === 90 || rot === 270) ? boxW : boxH;
+    const margin = 14;
+    const h = 22;
+    const w = Math.min(232, Math.max(120, visW - 2 * margin));
+    const closeW = 22;
+    const vx0 = visW - margin - w;
+    const vy0 = visH - margin - h;
+    const vx1 = visW - margin;
+    const vy1 = visH - margin;
+
+    const stampRect = mapVisualRectToPdf(page1.box, rot, vx0, vy0, vx1, vy1);
+    const uriRect = mapVisualRectToPdf(page1.box, rot, vx0, vy0, vx1 - closeW, vy1);
+    const closeRect = mapVisualRectToPdf(page1.box, rot, vx1 - closeW, vy0, vx1, vy1);
+
+    let apMatrix = '[1 0 0 1 0 0]';
+    if (rot === 90) apMatrix = `[0 1 -1 0 ${fmtCoord(h)} 0]`;
+    else if (rot === 180) apMatrix = `[-1 0 0 -1 ${fmtCoord(w)} ${fmtCoord(h)}]`;
+    else if (rot === 270) apMatrix = `[0 -1 1 0 0 ${fmtCoord(w)}]`;
+
+    const apStreamStr = buildHintAppearanceStream(w, h, closeW);
+    const apBytes = toAsciiBytes(apStreamStr);
+    const apObj = nextObj++;
+    newOffsets.set(apObj, out.length);
+    out.pushAscii(
+      `${apObj} 0 obj\n<< /Type /XObject /Subtype /Form /FormType 1 /BBox [0 0 ${fmtCoord(w)} ${fmtCoord(h)}] /Matrix ${apMatrix} /Resources << /ExtGState << /GS1 << /Type /ExtGState /ca 0.88 /CA 0.95 >> >> /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >> >> >> /Length ${apBytes.length} >>\nstream\n`,
+    );
+    out.pushBytes(apBytes);
+    out.pushAscii('endstream\nendobj\n');
+
+    const stampObj = nextObj++;
+    newOffsets.set(stampObj, out.length);
+    out.pushAscii(
+      `${stampObj} 0 obj\n<< /Type /Annot /Subtype /Stamp /Rect ${fmtRect(stampRect)} /F 0 /Border [0 0 0] /NM (${HINT_PREFIX}-stamp) /Contents (${HINT_TEXT_WINANSI}) /AP << /N ${apObj} 0 R >> /OC ${ocgObjNum} 0 R >>\nendobj\n`,
+    );
+
+    const uriObj = nextObj++;
+    newOffsets.set(uriObj, out.length);
+    out.pushAscii(
+      `${uriObj} 0 obj\n<< /Type /Annot /Subtype /Link /Rect ${fmtRect(uriRect)} /F 0 /Border [0 0 0] /H /I /NM (${HINT_PREFIX}-link) /A << /S /URI /URI (${HINT_URI}) >> /OC ${ocgObjNum} 0 R >>\nendobj\n`,
+    );
+
+    const closeObj = nextObj++;
+    newOffsets.set(closeObj, out.length);
+    out.pushAscii(
+      `${closeObj} 0 obj\n<< /Type /Annot /Subtype /Link /Rect ${fmtRect(closeRect)} /F 0 /Border [0 0 0] /H /I /NM (${HINT_PREFIX}-close) /A << /S /SetOCGState /State [/OFF ${ocgObjNum} 0 R] >> /OC ${ocgObjNum} 0 R >>\nendobj\n`,
+    );
+
+    // Rewrite Page 1 with preserved user annotations + 3 idempotent hint annotations.
+    const mergedAnnots = [
+      ...existingPage1Annots.map(serializePDFVal),
+      `${stampObj} 0 R`,
+      `${uriObj} 0 R`,
+      `${closeObj} 0 R`,
+    ];
+    newOffsets.set(page1.objNum, out.length);
+    const page1Entries = page1.dict
+      .filter((kv) => kv.key !== 'Annots')
+      .map((kv) => ` /${escapePDFName(kv.key)} ${serializePDFVal(kv.val)}`)
+      .join('');
+    out.pushAscii(`${page1.objNum} 0 obj\n<<${page1Entries} /Annots [${mergedAnnots.join(' ')}] >>\nendobj\n`);
+
+    // Build /OCProperties merging any existing OCGs / /D configuration.
+    let ocgItems = [];
+    let dDictEntries = [];
+    let onItems = [];
+    let offItems = [];
+    let asItems = [];
+    let extraOcpEntries = [];
+
+    if (existingOcProps) {
+      for (const kv of existingOcProps.dict) {
+        if (kv.key !== 'OCGs' && kv.key !== 'D') extraOcpEntries.push(kv);
+      }
+      const ocgsArr = dictGet(existingOcProps, 'OCGs');
+      const resolvedOcgs = ocgsArr ? await idx.resolveValue(ocgsArr).catch(() => null) : null;
+      if (resolvedOcgs && resolvedOcgs.kind === 'array') ocgItems = [...resolvedOcgs.items];
+
+      const dRaw = dictGet(existingOcProps, 'D');
+      const dResolved = dRaw ? await idx.resolveValue(dRaw).catch(() => null) : null;
+      if (dResolved && dResolved.kind === 'dict') {
+        for (const kv of dResolved.dict) {
+          if (kv.key === 'ON') {
+            const r = await idx.resolveValue(kv.val).catch(() => null);
+            if (r && r.kind === 'array') onItems = [...r.items];
+          } else if (kv.key === 'OFF') {
+            const r = await idx.resolveValue(kv.val).catch(() => null);
+            if (r && r.kind === 'array') {
+              offItems = r.items.filter((it) => !(it.kind === 'ref' && it.objNum === ocgObjNum));
+            }
+          } else if (kv.key === 'AS') {
+            const r = await idx.resolveValue(kv.val).catch(() => null);
+            if (r && r.kind === 'array') asItems = [...r.items];
+          } else {
+            dDictEntries.push(kv);
+          }
+        }
+      }
+    }
+
+    appendUniqueRef(ocgItems, ocgObjNum);
+    appendUniqueRef(onItems, ocgObjNum);
+
+    const hasAsEvent = (evtName) => asItems.some((item) => {
+      if (item.kind !== 'dict') return false;
+      const ev = dictGet(item, 'Event');
+      const ocgs = dictGet(item, 'OCGs');
+      if (!ev || ev.kind !== 'name' || ev.raw !== evtName || !ocgs || ocgs.kind !== 'array') return false;
+      return ocgs.items.some((r) => r.kind === 'ref' && r.objNum === ocgObjNum);
+    });
+    if (!hasAsEvent('Print')) {
+      asItems.push({
+        kind: 'dict',
+        dict: [
+          { key: 'Event', val: { kind: 'name', raw: 'Print' } },
+          { key: 'OCGs', val: { kind: 'array', items: [ocgRef] } },
+          { key: 'Category', val: { kind: 'array', items: [{ kind: 'name', raw: 'Print' }] } },
+        ],
+      });
+    }
+    if (!hasAsEvent('View')) {
+      asItems.push({
+        kind: 'dict',
+        dict: [
+          { key: 'Event', val: { kind: 'name', raw: 'View' } },
+          { key: 'OCGs', val: { kind: 'array', items: [ocgRef] } },
+          { key: 'Category', val: { kind: 'array', items: [{ kind: 'name', raw: 'View' }] } },
+        ],
+      });
+    }
+
+    const dFinal = [
+      ...dDictEntries,
+      { key: 'ON', val: { kind: 'array', items: onItems } },
+      ...(offItems.length ? [{ key: 'OFF', val: { kind: 'array', items: offItems } }] : []),
+      { key: 'AS', val: { kind: 'array', items: asItems } },
+    ];
+    ocPropsVal = {
+      kind: 'dict',
+      dict: [
+        ...extraOcpEntries,
+        { key: 'OCGs', val: { kind: 'array', items: ocgItems } },
+        { key: 'D', val: { kind: 'dict', dict: dFinal } },
+      ],
+    };
+  }
+
   newOffsets.set(idx.rootObjNum, out.length);
+  const existingPageMode = dictGet(catVal, 'PageMode');
+  const shouldSetPageMode = wantHint && (!existingPageMode || (existingPageMode.kind === 'name' && existingPageMode.raw === 'UseNone'));
   const catEntries = catVal.dict
-    .filter((kv) => kv.key !== 'Names')
+    .filter((kv) => {
+      if (kv.key === 'Names') return false;
+      if (ocPropsVal && kv.key === 'OCProperties') return false;
+      if (shouldSetPageMode && kv.key === 'PageMode') return false;
+      return true;
+    })
     .map((kv) => ` /${escapePDFName(kv.key)} ${serializePDFVal(kv.val)}`)
     .join('');
-  out.pushAscii(`${idx.rootObjNum} 0 obj\n<<${catEntries} /Names ${namesObj} 0 R >>\nendobj\n`);
-
-  const countNew = nextObj - firstNewObj;
+  let catExtra = ` /Names ${namesObj} 0 R`;
+  if (ocPropsVal) catExtra += ` /OCProperties ${serializePDFVal(ocPropsVal)}`;
+  if (shouldSetPageMode) catExtra += ' /PageMode /UseAttachments';
+  out.pushAscii(`${idx.rootObjNum} 0 obj\n<<${catEntries}${catExtra} >>\nendobj\n`);
 
   if (idx.usesXRefStream) {
     const xrefObj = nextObj++;
     const xrefOffset = out.length;
     newOffsets.set(xrefObj, xrefOffset);
 
-    const totalNew = countNew + 1;
+    const writtenNums = Array.from(newOffsets.keys()).sort((a, b) => a - b);
+    const groups = groupContiguousObjNums(writtenNums);
     const offsetBytes = xrefOffset > 0xffffffff ? 6 : 4;
     const rowLen = 2 + offsetBytes;
-    const xstream = new Uint8Array((1 + totalNew) * rowLen);
-    writeXRefRow(xstream, 0, 1, newOffsets.get(idx.rootObjNum), 0, offsetBytes);
-    for (let obj = firstNewObj, rowIdx = 1; obj < nextObj; obj++, rowIdx++) {
-      writeXRefRow(xstream, rowIdx * rowLen, 1, newOffsets.get(obj), 0, offsetBytes);
+    const xstream = new Uint8Array(writtenNums.length * rowLen);
+    for (let i = 0; i < writtenNums.length; i++) {
+      writeXRefRow(xstream, i * rowLen, 1, newOffsets.get(writtenNums[i]), 0, offsetBytes);
     }
-
-    let xHdr = `${xrefObj} 0 obj\n<< /Type /XRef /Size ${nextObj} /W [1 ${offsetBytes} 1] /Index [${idx.rootObjNum} 1 ${firstNewObj} ${totalNew}] /Root ${idx.rootObjNum} 0 R /Prev ${idx.firstXRefOffset}`;
+    const indexStr = groups.map((g) => `${g.start} ${g.count}`).join(' ');
+    let xHdr = `${xrefObj} 0 obj\n<< /Type /XRef /Size ${nextObj} /W [1 ${offsetBytes} 1] /Index [${indexStr}] /Root ${idx.rootObjNum} 0 R /Prev ${idx.firstXRefOffset}`;
     if (idx.infoRef) xHdr += ` /Info ${serializePDFVal(idx.infoRef)}`;
     if (idx.idVal) xHdr += ` /ID ${serializePDFVal(idx.idVal)}`;
     xHdr += ` /Length ${xstream.length} >>\nstream\n`;
@@ -1074,12 +1458,14 @@ export async function attachFilesToPdf(pdfBytes, files) {
     out.pushAscii(`\nendstream\nendobj\nstartxref\n${xrefOffset}\n%%EOF\n`);
   } else {
     const xrefOffset = out.length;
+    const writtenNums = Array.from(newOffsets.keys()).sort((a, b) => a - b);
+    const groups = groupContiguousObjNums(writtenNums);
     let xTxt = 'xref\n';
-    xTxt += `${idx.rootObjNum} 1\n`;
-    xTxt += `${String(newOffsets.get(idx.rootObjNum)).padStart(10, '0')} 00000 n \n`;
-    xTxt += `${firstNewObj} ${countNew}\n`;
-    for (let obj = firstNewObj; obj < nextObj; obj++) {
-      xTxt += `${String(newOffsets.get(obj)).padStart(10, '0')} 00000 n \n`;
+    for (const g of groups) {
+      xTxt += `${g.start} ${g.count}\n`;
+      for (let obj = g.start; obj < g.start + g.count; obj++) {
+        xTxt += `${String(newOffsets.get(obj)).padStart(10, '0')} 00000 n \n`;
+      }
     }
     xTxt += `trailer\n<< /Size ${nextObj} /Root ${idx.rootObjNum} 0 R /Prev ${idx.firstXRefOffset}`;
     if (idx.infoRef) xTxt += ` /Info ${serializePDFVal(idx.infoRef)}`;

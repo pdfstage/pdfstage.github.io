@@ -141,7 +141,7 @@ export async function castPair({
     });
   }
 
-  const outputBytes = await attachFilesToPdf(pdfBytes, attachments);
+  const outputBytes = await attachFilesToPdf(pdfBytes, attachments, { viewerHint: hasAudio });
   if (onProgress) onProgress({ phase: 'done', slideIndex: deck.slides.length, slideCount: deck.slides.length, pct: 100, text: 'Fertig' });
 
   return {
@@ -745,6 +745,35 @@ function initUI() {
     statusBanner.hidden = true;
     render();
   });
+
+  const updateBtn = document.getElementById('updateBtn');
+  if (window.pdfstagePwa && updateBtn) {
+    const pwa = window.pdfstagePwa.initPwa({
+      onUpdateAvailable() {
+        updateBtn.hidden = false;
+        updateBtn.disabled = false;
+        updateBtn.textContent = 'Update verfügbar – neu laden';
+      },
+      onUpdateUnavailable() {
+        updateBtn.hidden = true;
+        updateBtn.disabled = false;
+      },
+      onBusyChange(busy) {
+        updateBtn.disabled = busy;
+        updateBtn.textContent = busy ? 'Aktualisiere …' : 'Update verfügbar – neu laden';
+      },
+      onBeforeReload() {
+        if (runningBatch) {
+          statusBanner.hidden = false;
+          statusBanner.textContent = 'Konvertierung läuft — Update bitte erst nach Abschluss neu laden.';
+          return false;
+        }
+        return true;
+      },
+    });
+    updateBtn.addEventListener('click', () => { pwa.triggerUpdate(); });
+    window.__pdfstageCastPwa = pwa;
+  }
 
   render();
 }

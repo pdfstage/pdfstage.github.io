@@ -7,6 +7,7 @@
 <title>pdfstage / cast</title>
 <link rel="manifest" href="../manifest.json">
 <link rel="icon" type="image/svg+xml" href="../icon.svg">
+<script src="../pwa.js" defer></script>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -31,6 +32,18 @@
   }
   .brand { font-size: 15px; font-weight: 600; color: #f3f4f6; }
   .brand span { color: #888; font-weight: 400; }
+  .hdr-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .hdr-update {
+    background: #29181d;
+    color: #ffd4dc;
+    border: 1px solid #ff335c;
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .hdr-update:hover:not(:disabled) { background: #3d1f28; }
+  .hdr-update:disabled { opacity: 0.6; cursor: wait; }
   .hdr-link {
     background: #262626;
     color: #eee;
@@ -278,7 +291,10 @@
 
 <header>
   <div class="brand">pdfstage <span>/ cast</span></div>
-  <a class="hdr-link" href="../">&larr; Player</a>
+  <div class="hdr-right">
+    <button id="updateBtn" class="hdr-update" type="button" hidden title="Neue App-Version laden">Update verfügbar – neu laden</button>
+    <a class="hdr-link" href="../">&larr; Player</a>
+  </div>
 </header>
 
 <main>

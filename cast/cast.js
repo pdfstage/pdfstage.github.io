@@ -127,10 +127,21 @@ export async function castPair({
 
   if (onProgress) onProgress({ phase: 'parse', slideIndex: 0, slideCount: 1, pct: 5, text: 'Präsentationsstruktur lesen …' });
   const deck = await parsePpsxDeck(deckFile, { includeHidden });
+  const deckSha256 = await sha256Hex(new Uint8Array(await deckFile.arrayBuffer()));
 
   const baseName = stripDeckExtension(pdfFile.name) || stripDeckExtension(deckFile.name) || 'Praesentation';
   const pdfBytes = new Uint8Array(await pdfFile.arrayBuffer());
   const pdfPages = await getPdfPageCount(pdfBytes);
+
+  let existingAtts = null;
+  let existingMeta = null;
+  try {
+    existingAtts = await readPdfAttachments(pdfBytes);
+    const rawExistingMeta = existingAtts.get('pdfstage.json');
+    if (rawExistingMeta) {
+      existingMeta = JSON.parse(utf8Decoder.decode(rawExistingMeta));
+    }
+  } catch { /* ignore invalid existing metadata */ }
 
   let audioResult = {
     audioBytes: null,
@@ -146,30 +157,25 @@ export async function castPair({
   let reusedAudio = false;
   if (!viewerOnly) {
     audioSourceSha256 = await computeAudioSourceSha256(deck, { includeHidden, silentSeconds, tailSilence, bitrate });
-    if (audioSourceSha256) {
+    if (audioSourceSha256 && existingAtts && existingMeta) {
       try {
-        const existingAtts = await readPdfAttachments(pdfBytes);
-        const rawExistingMeta = existingAtts.get('pdfstage.json');
-        if (rawExistingMeta) {
-          const existingMeta = JSON.parse(utf8Decoder.decode(rawExistingMeta));
-          const prevSrcHash = existingMeta?.provenance?.audioSourceSha256;
-          const prevAudioName = typeof existingMeta?.audio === 'string' ? existingMeta.audio : '';
-          const prevAudioBytes = prevAudioName ? existingAtts.get(prevAudioName) : null;
-          if (prevSrcHash && prevSrcHash === audioSourceSha256 && prevAudioBytes && prevAudioBytes.length > 0) {
-            const actualHash = await sha256Hex(prevAudioBytes);
-            const expectedHash = existingMeta?.provenance?.audioSha256;
-            if (!expectedHash || expectedHash === actualHash) {
-              audioResult = {
-                audioBytes: prevAudioBytes,
-                audioName: prevAudioName,
-                audioMime: existingMeta.audioMime || (prevAudioName.endsWith('.wav') ? 'audio/wav' : 'audio/ogg'),
-                starts: Array.isArray(existingMeta.starts) ? existingMeta.starts : [],
-                duration: typeof existingMeta.duration === 'number' ? existingMeta.duration : 0,
-                warnings: [],
-              };
-              audioSha256 = actualHash;
-              reusedAudio = true;
-            }
+        const prevSrcHash = existingMeta?.provenance?.audioSourceSha256;
+        const prevAudioName = typeof existingMeta?.audio === 'string' ? existingMeta.audio : '';
+        const prevAudioBytes = prevAudioName ? existingAtts.get(prevAudioName) : null;
+        if (prevSrcHash && prevSrcHash === audioSourceSha256 && prevAudioBytes && prevAudioBytes.length > 0) {
+          const actualHash = await sha256Hex(prevAudioBytes);
+          const expectedHash = existingMeta?.provenance?.audioSha256;
+          if (!expectedHash || expectedHash === actualHash) {
+            audioResult = {
+              audioBytes: prevAudioBytes,
+              audioName: prevAudioName,
+              audioMime: existingMeta.audioMime || (prevAudioName.endsWith('.wav') ? 'audio/wav' : 'audio/ogg'),
+              starts: Array.isArray(existingMeta.starts) ? existingMeta.starts : [],
+              duration: typeof existingMeta.duration === 'number' ? existingMeta.duration : 0,
+              warnings: [],
+            };
+            audioSha256 = actualHash;
+            reusedAudio = true;
           }
         }
       } catch { /* ignore invalid existing metadata */ }
@@ -207,29 +213,37 @@ export async function castPair({
   }
 
   const hasAudio = Boolean(audioResult.audioBytes && audioResult.audioBytes.length > 0);
-  const provenance = {
-    bytes: deckFile.size,
-    convertedAt: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
-    hiddenIncluded: Boolean(includeHidden),
-    silentSeconds,
-    tailSilence,
-  };
+  const provenance = {};
+  const prevProv = existingMeta && typeof existingMeta === 'object' ? existingMeta.provenance : null;
+  if (prevProv && typeof prevProv.sourceUrl === 'string' && prevProv.sourceUrl && prevProv.sourceUrl !== '-') {
+    if (!prevProv.sha256 || !deckSha256 || prevProv.sha256 === deckSha256) {
+      provenance.sourceUrl = prevProv.sourceUrl;
+    }
+  }
+  if (deckSha256) provenance.sha256 = deckSha256;
+  if (deckFile.size > 0) provenance.bytes = deckFile.size;
+  provenance.convertedAt = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+  if (includeHidden) provenance.hiddenIncluded = true;
+  if (silentSeconds > 0) provenance.silentSeconds = silentSeconds;
+  if (tailSilence > 0) provenance.tailSilence = tailSilence;
   if (audioSha256) provenance.audioSha256 = audioSha256;
   if (audioSourceSha256) provenance.audioSourceSha256 = audioSourceSha256;
-  const meta = {
-    v: 1,
-    title: baseName,
-    titles: deck.slides.map((s) => s.tooltipTitle || ''),
-    provenance,
-  };
+
+  const meta = { v: 1 };
+  if (baseName) meta.title = baseName;
   if (hasAudio) {
     meta.audio = audioResult.audioName;
     if (audioResult.audioMime && audioResult.audioMime !== 'audio/ogg') {
       meta.audioMime = audioResult.audioMime;
     }
-    meta.duration = audioResult.duration;
-    meta.starts = audioResult.starts;
+    const roundedDur = Math.round((audioResult.duration || 0) * 1000) / 1000;
+    if (roundedDur > 0) meta.duration = roundedDur;
+    if (Array.isArray(audioResult.starts) && audioResult.starts.length > 0) {
+      meta.starts = audioResult.starts;
+    }
   }
+  meta.titles = deck.slides.map((s) => s.tooltipTitle || '');
+  meta.provenance = provenance;
 
   const attachments = [
     {
@@ -843,7 +857,7 @@ function initUI() {
             attLine.className = p.canReplace ? 'job-info-line' : 'job-warn';
             if (p.canReplace) {
               const effMode = readAttachMode(job);
-              const extraNote = p.replaceStrategy === 'revision-replay' ? ', spätere PDF-Annotationen bleiben erhalten' : '';
+              const extraNote = p.revisionsAfterDead > 0 ? ', spätere PDF-Annotationen bleiben erhalten' : '';
               const modeTxt = effMode === 'append'
                 ? `Modus: Anhängen (+${formatBytes(p.deadBytes)} Altlast)`
                 : effMode === 'ask'
@@ -940,7 +954,7 @@ function initUI() {
           const box = document.createElement('div');
           box.className = 'job-confirm';
           const msg = document.createElement('div');
-          const annotNote = dp.replaceStrategy === 'revision-replay'
+          const annotNote = dp.revisionsAfterDead > 0
             ? ' Spätere PDF-Annotationen bleiben dabei erhalten.'
             : '';
           msg.textContent = `Im PDF liegt bereits ${deadNames}. Ohne Entfernen würden ${formatBytes(dp.deadBytes)} verwaiste Daten im PDF verbleiben.${annotNote}`;
@@ -985,9 +999,13 @@ function initUI() {
           if (appliedMode === 'noop') {
             attachNote = ' · Unverändert (0 B)';
           } else if (appliedMode === 'replace' && plan && plan.reclaimableBytes > 0) {
-            attachNote = plan.replaceStrategy === 'revision-replay'
-              ? ` · Altlast entfernt (–${formatBytes(plan.reclaimableBytes)}), PDF-Annotationen erhalten`
+            const onlyMetaDead = plan.deadFiles.length > 0 && plan.deadFiles.every((f) => f.name === 'pdfstage.json');
+            const baseTxt = onlyMetaDead
+              ? ' · Metadaten aktualisiert'
               : ` · Altlast entfernt (–${formatBytes(plan.reclaimableBytes)})`;
+            attachNote = plan.revisionsAfterDead > 0
+              ? `${baseTxt}, PDF-Annotationen erhalten`
+              : baseTxt;
           } else if (appliedMode === 'append' && plan && plan.deadBytes > 0) {
             attachNote = ` · Angehängt (+${formatBytes(plan.deadBytes)} Altlast)`;
           }

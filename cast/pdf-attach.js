@@ -1055,17 +1055,28 @@ function canonicalJson(val) {
   return JSON.stringify(val);
 }
 
+function normalizePdfstageMeta(meta) {
+  if (!meta || typeof meta !== 'object') return meta;
+  if (meta.provenance && typeof meta.provenance === 'object') {
+    delete meta.provenance.convertedAt;
+    if (meta.provenance.hiddenIncluded === false) {
+      delete meta.provenance.hiddenIncluded;
+    }
+    if (meta.provenance.sourceUrl === '' || meta.provenance.sourceUrl === '-') {
+      delete meta.provenance.sourceUrl;
+    }
+    if (Object.keys(meta.provenance).length === 0) {
+      delete meta.provenance;
+    }
+  }
+  return meta;
+}
+
 function isSamePdfstageMeta(existingBytes, nextBytes) {
   if (bytesEqual(existingBytes, nextBytes)) return true;
   try {
-    const a = JSON.parse(utf8Decoder.decode(existingBytes));
-    const b = JSON.parse(utf8Decoder.decode(nextBytes));
-    if (a && typeof a === 'object' && a.provenance && typeof a.provenance === 'object') {
-      delete a.provenance.convertedAt;
-    }
-    if (b && typeof b === 'object' && b.provenance && typeof b.provenance === 'object') {
-      delete b.provenance.convertedAt;
-    }
+    const a = normalizePdfstageMeta(JSON.parse(utf8Decoder.decode(existingBytes)));
+    const b = normalizePdfstageMeta(JSON.parse(utf8Decoder.decode(nextBytes)));
     return canonicalJson(a) === canonicalJson(b);
   } catch {
     return false;

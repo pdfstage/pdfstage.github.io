@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pdfstage-v6';
+const CACHE_NAME = 'pdfstage-v7';
 const SHELL_ASSETS = [
   './',
   './index.html',

@@ -5,6 +5,46 @@ import { attachFilesToPdf, getPdfPageCount, readPdfAttachments } from './pdf-att
 import { buildStoreZip } from './zip-store.js';
 
 const utf8Encoder = new TextEncoder();
+const utf8Decoder = new TextDecoder();
+
+async function sha256Hex(u8) {
+  if (!u8 || !globalThis.crypto || !crypto.subtle) return '';
+  const digest = await crypto.subtle.digest('SHA-256', u8);
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function computeAudioSourceSha256(deck, { includeHidden, silentSeconds, tailSilence, bitrate }) {
+  if (!globalThis.crypto || !crypto.subtle) return '';
+  const chunks = [];
+  let totalLen = 0;
+  const pushStr = (s) => {
+    const b = utf8Encoder.encode(s);
+    chunks.push(b);
+    totalLen += b.length;
+  };
+  pushStr(`pdfstage-audio-v1\nhidden=${includeHidden ? 1 : 0};silent=${silentSeconds};tail=${tailSilence};bitrate=${bitrate}\n`);
+  for (const s of deck.slides) {
+    pushStr(`slide:${s.advance || 0}:${s.audio.length}\n`);
+    for (const mediaPath of s.audio) {
+      const base = mediaPath.split('/').pop() || mediaPath;
+      const entryBytes = await deck.zip.readEntry(mediaPath);
+      const u8 = entryBytes || new Uint8Array(0);
+      pushStr(`${base}:${u8.byteLength}\n`);
+      if (u8.byteLength > 0) {
+        chunks.push(u8);
+        totalLen += u8.byteLength;
+      }
+      pushStr('\n');
+    }
+  }
+  const combined = new Uint8Array(totalLen);
+  let off = 0;
+  for (const c of chunks) {
+    combined.set(c, off);
+    off += c.byteLength;
+  }
+  return sha256Hex(combined);
+}
 
 export function stripDeckExtension(name) {
   return (name || '')
@@ -62,6 +102,9 @@ export async function castPair({
   const deck = await parsePpsxDeck(deckFile, { includeHidden });
 
   const baseName = stripDeckExtension(pdfFile.name) || stripDeckExtension(deckFile.name) || 'Praesentation';
+  const pdfBytes = new Uint8Array(await pdfFile.arrayBuffer());
+  const pdfPages = await getPdfPageCount(pdfBytes);
+
   let audioResult = {
     audioBytes: null,
     audioName: '',
@@ -70,48 +113,87 @@ export async function castPair({
     duration: 0,
     warnings: [],
   };
+  let audioSha256 = '';
+  let audioSourceSha256 = '';
 
   if (!viewerOnly) {
-    audioResult = await buildDeckAudio(deck, {
-      silentSeconds,
-      tailSilence,
-      bitrate,
-      onProgress(ev) {
-        if (!onProgress) return;
-        const pct = ev.phase === 'finalize'
-          ? 84
-          : Math.min(82, 10 + Math.round(((ev.slideIndex + 1) / Math.max(1, ev.slideCount)) * 72));
-        const label = ev.phase === 'finalize'
-          ? 'Opus-Container abschließen …'
-          : `Folie ${ev.slideIndex + 1} von ${ev.slideCount} kodieren …`;
-        onProgress({ ...ev, pct, text: label });
-      },
-    });
+    audioSourceSha256 = await computeAudioSourceSha256(deck, { includeHidden, silentSeconds, tailSilence, bitrate });
+    let reusedAudio = false;
+    if (audioSourceSha256) {
+      try {
+        const existingAtts = await readPdfAttachments(pdfBytes);
+        const rawExistingMeta = existingAtts.get('pdfstage.json');
+        if (rawExistingMeta) {
+          const existingMeta = JSON.parse(utf8Decoder.decode(rawExistingMeta));
+          const prevSrcHash = existingMeta?.provenance?.audioSourceSha256;
+          const prevAudioName = typeof existingMeta?.audio === 'string' ? existingMeta.audio : '';
+          const prevAudioBytes = prevAudioName ? existingAtts.get(prevAudioName) : null;
+          if (prevSrcHash && prevSrcHash === audioSourceSha256 && prevAudioBytes && prevAudioBytes.length > 0) {
+            const actualHash = await sha256Hex(prevAudioBytes);
+            const expectedHash = existingMeta?.provenance?.audioSha256;
+            if (!expectedHash || expectedHash === actualHash) {
+              audioResult = {
+                audioBytes: prevAudioBytes,
+                audioName: prevAudioName,
+                audioMime: existingMeta.audioMime || (prevAudioName.endsWith('.wav') ? 'audio/wav' : 'audio/ogg'),
+                starts: Array.isArray(existingMeta.starts) ? existingMeta.starts : [],
+                duration: typeof existingMeta.duration === 'number' ? existingMeta.duration : 0,
+                warnings: [],
+              };
+              audioSha256 = actualHash;
+              reusedAudio = true;
+            }
+          }
+        }
+      } catch { /* ignore invalid existing metadata */ }
+    }
+
+    if (!reusedAudio) {
+      audioResult = await buildDeckAudio(deck, {
+        silentSeconds,
+        tailSilence,
+        bitrate,
+        onProgress(ev) {
+          if (!onProgress) return;
+          const pct = ev.phase === 'finalize'
+            ? 84
+            : Math.min(82, 10 + Math.round(((ev.slideIndex + 1) / Math.max(1, ev.slideCount)) * 72));
+          const label = ev.phase === 'finalize'
+            ? 'Opus-Container abschließen …'
+            : `Folie ${ev.slideIndex + 1} von ${ev.slideCount} kodieren …`;
+          onProgress({ ...ev, pct, text: label });
+        },
+      });
+      if (audioResult.audioBytes && audioResult.audioBytes.length > 0) {
+        audioSha256 = await sha256Hex(audioResult.audioBytes);
+      }
+    }
   } else if (deck.missing && deck.missing.length > 0) {
     audioResult.warnings.push(`Fehlende Audiodatei(en) im Paket: ${deck.missing.join(', ')}`);
   }
 
   if (onProgress) onProgress({ phase: 'attach', slideIndex: deck.slides.length, slideCount: deck.slides.length, pct: 90, text: 'In PDF einbetten …' });
 
-  const pdfBytes = new Uint8Array(await pdfFile.arrayBuffer());
-  const pdfPages = await getPdfPageCount(pdfBytes);
   const warnings = [...audioResult.warnings];
   if (pdfPages !== null && pdfPages !== deck.slides.length) {
     warnings.push(`Seitenzahl weicht ab: ${deck.slides.length} Folien vs. ${pdfPages} PDF-Seiten.`);
   }
 
   const hasAudio = Boolean(audioResult.audioBytes && audioResult.audioBytes.length > 0);
+  const provenance = {
+    bytes: deckFile.size,
+    convertedAt: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    hiddenIncluded: Boolean(includeHidden),
+    silentSeconds,
+    tailSilence,
+  };
+  if (audioSha256) provenance.audioSha256 = audioSha256;
+  if (audioSourceSha256) provenance.audioSourceSha256 = audioSourceSha256;
   const meta = {
     v: 1,
     title: baseName,
     titles: deck.slides.map((s) => s.tooltipTitle || ''),
-    provenance: {
-      bytes: deckFile.size,
-      convertedAt: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
-      hiddenIncluded: Boolean(includeHidden),
-      silentSeconds,
-      tailSilence,
-    },
+    provenance,
   };
   if (hasAudio) {
     meta.audio = audioResult.audioName;

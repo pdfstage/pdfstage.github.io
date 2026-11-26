@@ -2,7 +2,8 @@
 // Direct port of tools/assistant/ppsx/pdf_attach.go using native CompressionStream('deflate').
 
 const asciiEncoder = new TextEncoder();
-const utf8Decoder = new TextDecoder('utf-8');
+const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
+const utf8Encoder = new TextEncoder();
 
 function toAsciiBytes(str) {
   const out = new Uint8Array(str.length);
@@ -847,6 +848,14 @@ export async function getPdfPageCount(pdfBytes) {
 }
 
 async function collectEmbeddedFiles(idx, nodeVal, out, visited) {
+  const refs = new Map();
+  await collectEmbeddedFileRefs(idx, nodeVal, refs, visited);
+  for (const [name, entry] of refs.entries()) {
+    out.set(name, entry.decodedData);
+  }
+}
+
+async function collectEmbeddedFileRefs(idx, nodeVal, out, visited) {
   if (!nodeVal) return;
   if (nodeVal.kind === 'ref') {
     if (visited.has(nodeVal.objNum)) return;
@@ -861,7 +870,8 @@ async function collectEmbeddedFiles(idx, nodeVal, out, visited) {
     if (resolvedArr && resolvedArr.kind === 'array') {
       for (let i = 0; i + 1 < resolvedArr.items.length; i += 2) {
         const keyName = decodePDFStringVal(resolvedArr.items[i]);
-        const fsVal = await idx.resolveValue(resolvedArr.items[i + 1]);
+        const fsRef = resolvedArr.items[i + 1];
+        const fsVal = await idx.resolveValue(fsRef);
         if (!fsVal || fsVal.kind !== 'dict') continue;
         let fileName = keyName;
         const uf = dictGet(fsVal, 'UF');
@@ -881,7 +891,10 @@ async function collectEmbeddedFiles(idx, nodeVal, out, visited) {
         if (!streamRef) continue;
         const streamObj = await idx.resolveValue(streamRef);
         if (!streamObj || streamObj.kind !== 'stream') continue;
-        out.set(fileName, await decodePDFStream(streamObj));
+        out.set(fileName, {
+          filespecRef: fsRef.kind === 'ref' ? fsRef : null,
+          decodedData: await decodePDFStream(streamObj),
+        });
       }
     }
   }
@@ -891,9 +904,43 @@ async function collectEmbeddedFiles(idx, nodeVal, out, visited) {
     const resolvedKids = await idx.resolveValue(kidsArr);
     if (resolvedKids && resolvedKids.kind === 'array') {
       for (const kid of resolvedKids.items) {
-        await collectEmbeddedFiles(idx, kid, out, visited);
+        await collectEmbeddedFileRefs(idx, kid, out, visited);
       }
     }
+  }
+}
+
+function bytesEqual(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function canonicalJson(val) {
+  if (Array.isArray(val)) return '[' + val.map(canonicalJson).join(',') + ']';
+  if (val && typeof val === 'object') {
+    const keys = Object.keys(val).sort();
+    return '{' + keys.map((k) => JSON.stringify(k) + ':' + canonicalJson(val[k])).join(',') + '}';
+  }
+  return JSON.stringify(val);
+}
+
+function isSamePdfstageMeta(existingBytes, nextBytes) {
+  if (bytesEqual(existingBytes, nextBytes)) return true;
+  try {
+    const a = JSON.parse(utf8Decoder.decode(existingBytes));
+    const b = JSON.parse(utf8Decoder.decode(nextBytes));
+    if (a && typeof a === 'object' && a.provenance && typeof a.provenance === 'object') {
+      delete a.provenance.convertedAt;
+    }
+    if (b && typeof b === 'object' && b.provenance && typeof b.provenance === 'object') {
+      delete b.provenance.convertedAt;
+    }
+    return canonicalJson(a) === canonicalJson(b);
+  } catch {
+    return false;
   }
 }
 
@@ -1127,13 +1174,18 @@ export async function attachFilesToPdf(pdfBytes, files, options = {}) {
   }
 
   const existingNamesDict = [];
+  const existingEFMap = new Map();
   const namesRaw = dictGet(catVal, 'Names');
   if (namesRaw) {
     try {
       const namesResolved = await idx.resolveValue(namesRaw);
       if (namesResolved && namesResolved.kind === 'dict') {
         for (const kv of namesResolved.dict) {
-          if (kv.key !== 'EmbeddedFiles') existingNamesDict.push(kv);
+          if (kv.key === 'EmbeddedFiles') {
+            await collectEmbeddedFileRefs(idx, kv.val, existingEFMap, new Set()).catch(() => {});
+          } else {
+            existingNamesDict.push(kv);
+          }
         }
       }
     } catch { /* keep going */ }
@@ -1144,10 +1196,17 @@ export async function attachFilesToPdf(pdfBytes, files, options = {}) {
   let existingPage1Annots = [];
   let existingOcProps = null;
   let existingOcgNum = 0;
+  let hintAlreadyCurrent = !wantHint;
 
   if (wantHint) {
     page1 = await resolveFirstPage(idx, catVal);
     if (page1) {
+      let hasHintStamp = false;
+      let hasHintLink = false;
+      let hasHintClose = false;
+      let stampContentsMatches = false;
+      const expectedStampText = 'Enth\u00e4lt Audio f\u00fcr pdfstage.github.io';
+
       const annotsRaw = dictGet({ kind: 'dict', dict: page1.dict }, 'Annots');
       if (annotsRaw) {
         try {
@@ -1155,11 +1214,24 @@ export async function attachFilesToPdf(pdfBytes, files, options = {}) {
           if (annotsArr && annotsArr.kind === 'array') {
             for (const item of annotsArr.items) {
               let nm = '';
+              let contents = '';
               try {
                 const resolved = await idx.resolveValue(item);
-                const nmVal = resolved && resolved.kind === 'dict' ? dictGet(resolved, 'NM') : null;
-                if (nmVal) nm = decodePDFStringVal(nmVal);
+                if (resolved && resolved.kind === 'dict') {
+                  const nmVal = dictGet(resolved, 'NM');
+                  if (nmVal) nm = decodePDFStringVal(nmVal);
+                  const cVal = dictGet(resolved, 'Contents');
+                  if (cVal) contents = decodePDFStringVal(cVal);
+                }
               } catch { /* keep unknown annot */ }
+              if (nm === `${HINT_PREFIX}-stamp`) {
+                hasHintStamp = true;
+                stampContentsMatches = contents === expectedStampText;
+              } else if (nm === `${HINT_PREFIX}-link`) {
+                hasHintLink = true;
+              } else if (nm === `${HINT_PREFIX}-close`) {
+                hasHintClose = true;
+              }
               if (nm.startsWith(HINT_PREFIX)) continue;
               existingPage1Annots.push(item);
             }
@@ -1191,10 +1263,28 @@ export async function attachFilesToPdf(pdfBytes, files, options = {}) {
           }
         } catch { /* ignore */ }
       }
+      hintAlreadyCurrent = existingOcgNum > 0 && hasHintStamp && stampContentsMatches && hasHintLink && hasHintClose;
+    } else {
+      hintAlreadyCurrent = true;
     }
   }
 
   const sortedFiles = [...files].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+
+  // Match each requested file against existing /EmbeddedFiles (reusing unchanged streams/Filespecs).
+  const matchedEntries = sortedFiles.map((f) => {
+    const prev = existingEFMap.get(f.name);
+    if (!prev || !prev.filespecRef) return null;
+    if (f.name === 'pdfstage.json') {
+      return isSamePdfstageMeta(prev.decodedData, f.data) ? prev.filespecRef : null;
+    }
+    return bytesEqual(prev.decodedData, f.data) ? prev.filespecRef : null;
+  });
+
+  const allReused = matchedEntries.every(Boolean);
+  if (allReused && existingEFMap.size === sortedFiles.length && hintAlreadyCurrent) {
+    return pdfBytes;
+  }
 
   const out = new ByteBuilder();
   out.pushBytes(pdfBytes);
@@ -1210,7 +1300,14 @@ export async function attachFilesToPdf(pdfBytes, files, options = {}) {
   const newOffsets = new Map();
   const attached = [];
 
-  for (const f of sortedFiles) {
+  for (let fi = 0; fi < sortedFiles.length; fi++) {
+    const f = sortedFiles[fi];
+    const reusedRef = matchedEntries[fi];
+    if (reusedRef) {
+      attached.push({ name: f.name, filespecObj: reusedRef.objNum });
+      continue;
+    }
+
     const efObj = nextObj++;
     const fsObj = nextObj++;
 

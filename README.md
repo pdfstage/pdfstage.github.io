@@ -112,6 +112,8 @@ All fields inside `provenance` are optional (producers may omit them or include 
 | `hiddenIncluded` | boolean | Whether hidden slides from the source deck were included in the PDF. |
 | `silentSeconds` | number | Synthetic duration (in seconds) assigned to slides without recorded narration. |
 | `tailSilence` | number | Trailing silence padding (in seconds) appended after narration segments. |
+| `audioSha256` | string | Lowercase hex SHA-256 digest of the embedded audio track (enables attachment reuse on re-pack). |
+| `audioSourceSha256` | string | Lowercase hex SHA-256 digest of source audio tracks and timing parameters (skips re-encoding when unchanged). |
 
 ---
 

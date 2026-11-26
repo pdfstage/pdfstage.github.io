@@ -1,11 +1,36 @@
 // Zero-install browser packer controller for /cast/ — pairs .ppsx/.pptx + .pdf and produces .stage.pdf locally.
 import { parsePpsxDeck } from './ppsx-reader.js';
 import { buildDeckAudio } from './ogg-opus.js';
-import { attachFilesToPdf, getPdfPageCount, readPdfAttachments } from './pdf-attach.js';
+import {
+  analyzePdfAttachmentUpdate,
+  attachFilesToPdf,
+  attachFilesToPdfWithReport,
+  getPdfPageCount,
+  readPdfAttachments,
+} from './pdf-attach.js';
 import { buildStoreZip } from './zip-store.js';
 
 const utf8Encoder = new TextEncoder();
 const utf8Decoder = new TextDecoder();
+const ATTACH_MODE_STORAGE_KEY = 'pdfstage:cast:attachMode';
+
+function normalizeAttachMode(val, fallback = 'replace') {
+  return (val === 'replace' || val === 'ask' || val === 'append') ? val : fallback;
+}
+
+function loadSavedAttachMode() {
+  try {
+    return normalizeAttachMode(localStorage.getItem(ATTACH_MODE_STORAGE_KEY), 'replace');
+  } catch {
+    return 'replace';
+  }
+}
+
+function saveAttachMode(mode) {
+  try {
+    localStorage.setItem(ATTACH_MODE_STORAGE_KEY, normalizeAttachMode(mode, 'replace'));
+  } catch { /* ignore storage errors */ }
+}
 
 async function sha256Hex(u8) {
   if (!u8 || !globalThis.crypto || !crypto.subtle) return '';
@@ -93,6 +118,8 @@ export async function castPair({
   bitrate = 32000,
   includeHidden = false,
   viewerOnly = false,
+  attachMode = 'replace',
+  onDeadFilesDecision = null,
   onProgress = null,
 }) {
   if (!deckFile) throw new Error('Keine .ppsx/.pptx-Datei ausgewählt');
@@ -116,9 +143,9 @@ export async function castPair({
   let audioSha256 = '';
   let audioSourceSha256 = '';
 
+  let reusedAudio = false;
   if (!viewerOnly) {
     audioSourceSha256 = await computeAudioSourceSha256(deck, { includeHidden, silentSeconds, tailSilence, bitrate });
-    let reusedAudio = false;
     if (audioSourceSha256) {
       try {
         const existingAtts = await readPdfAttachments(pdfBytes);
@@ -223,7 +250,31 @@ export async function castPair({
     });
   }
 
-  const outputBytes = await attachFilesToPdf(pdfBytes, attachments, { viewerHint: hasAudio });
+  const plan = await analyzePdfAttachmentUpdate(pdfBytes, attachments, { viewerHint: hasAudio });
+  let effectiveMode = 'replace';
+  const isSignificantDead = plan.deadBytes >= 32768 || plan.deadFiles.some((f) => f.name !== 'pdfstage.json');
+
+  if (!plan.noOp && plan.deadFiles.length > 0) {
+    if (plan.canReplace) {
+      if (attachMode === 'ask' && isSignificantDead && typeof onDeadFilesDecision === 'function') {
+        const chosen = await onDeadFilesDecision(plan);
+        effectiveMode = chosen === 'append' ? 'append' : 'replace';
+      } else {
+        effectiveMode = attachMode === 'append' ? 'append' : 'replace';
+      }
+    } else {
+      effectiveMode = 'append';
+      if (isSignificantDead) {
+        const deadNames = plan.deadFiles.filter((f) => f.name !== 'pdfstage.json' || plan.deadFiles.length === 1).map((f) => f.name).join(', ');
+        warnings.push(`Altes ${deadNames} (${formatBytes(plan.deadBytes)}) konnte nicht entfernt werden (${plan.replaceBlockedReason}) — wurde angehängt.`);
+      }
+    }
+  }
+
+  const { bytes: outputBytes, appliedMode } = await attachFilesToPdfWithReport(pdfBytes, attachments, {
+    viewerHint: hasAudio,
+    mode: effectiveMode,
+  });
   if (onProgress) onProgress({ phase: 'done', slideIndex: deck.slides.length, slideCount: deck.slides.length, pct: 100, text: 'Fertig' });
 
   return {
@@ -233,6 +284,7 @@ export async function castPair({
     deck,
     pdfPages,
     warnings,
+    attachReport: { plan, appliedMode, reusedAudio },
   };
 }
 
@@ -241,7 +293,9 @@ if (typeof window !== 'undefined') {
   window.__pdfstageCast = {
     castPair,
     parsePpsxDeck,
+    analyzePdfAttachmentUpdate,
     attachFilesToPdf,
+    attachFilesToPdfWithReport,
     readPdfAttachments,
     getPdfPageCount,
     buildStoreZip,
@@ -295,6 +349,7 @@ function initUI() {
   const silentInput = document.getElementById('optSilent');
   const tailInput = document.getElementById('optTail');
   const bitrateInput = document.getElementById('optBitrate');
+  const attachModeInput = document.getElementById('optAttachMode');
   const hiddenInput = document.getElementById('optHidden');
   const viewerOnlyInput = document.getElementById('optViewerOnly');
   const actionsBar = document.getElementById('batchBar');
@@ -306,10 +361,21 @@ function initUI() {
 
   if (!dropzone || !fileInput || !jobList) return;
 
+  if (attachModeInput) {
+    attachModeInput.value = loadSavedAttachMode();
+  }
+
   let nextId = 1;
   /** @type {Array<any>} */
   const jobs = [];
   let runningBatch = false;
+
+  function readAttachMode(job = null) {
+    if (job && job.overrideAttachMode) {
+      return normalizeAttachMode(job.overrideAttachMode, 'replace');
+    }
+    return attachModeInput ? normalizeAttachMode(attachModeInput.value, 'replace') : loadSavedAttachMode();
+  }
 
   function readGlobalOptions(job = null) {
     const silent = Math.max(0.5, Number(silentInput.value) || 5);
@@ -319,7 +385,8 @@ function initUI() {
       ? job.overrideHidden
       : Boolean(hiddenInput.checked);
     const viewerOnly = Boolean(viewerOnlyInput.checked);
-    return { silentSeconds: silent, tailSilence: tail, bitrate, includeHidden, viewerOnly };
+    const attachMode = readAttachMode(job);
+    return { silentSeconds: silent, tailSilence: tail, bitrate, includeHidden, viewerOnly, attachMode };
   }
 
   function revokeJobUrl(job) {
@@ -340,7 +407,58 @@ function initUI() {
         parsePpsxDeck(job.deckFile, { includeHidden: opts.includeHidden }),
         job.pdfFile.arrayBuffer(),
       ]);
-      const pdfPages = await getPdfPageCount(new Uint8Array(pdfBuf));
+      const pdfBytes = new Uint8Array(pdfBuf);
+      const pdfPages = await getPdfPageCount(pdfBytes);
+
+      let attachmentInfo = null;
+      let attachmentPlan = null;
+      try {
+        const existingAtts = await readPdfAttachments(pdfBytes);
+        const rawMeta = existingAtts.get('pdfstage.json');
+        if (rawMeta) {
+          const existingMeta = JSON.parse(utf8Decoder.decode(rawMeta));
+          const prevAudioName = typeof existingMeta?.audio === 'string' ? existingMeta.audio : '';
+          const prevAudioBytes = prevAudioName ? existingAtts.get(prevAudioName) : null;
+          let audioUnchanged = false;
+          if (!opts.viewerOnly && prevAudioBytes && prevAudioBytes.length > 0) {
+            const audioSourceSha256 = await computeAudioSourceSha256(deck, opts);
+            const prevSrcHash = existingMeta?.provenance?.audioSourceSha256;
+            if (audioSourceSha256 && prevSrcHash === audioSourceSha256) {
+              const actualHash = await sha256Hex(prevAudioBytes);
+              const expectedHash = existingMeta?.provenance?.audioSha256;
+              if (!expectedHash || expectedHash === actualHash) {
+                audioUnchanged = true;
+              }
+            }
+          }
+          if (audioUnchanged) {
+            attachmentInfo = {
+              kind: 'unchanged-audio',
+              text: 'Bestehendes Stage-PDF · Tonspur unverändert (wird wiederverwendet)',
+            };
+          } else if ((prevAudioBytes && prevAudioBytes.length > 0) || opts.viewerOnly) {
+            const previewAtts = [
+              {
+                name: 'pdfstage.json',
+                mime: 'application/json',
+                data: utf8Encoder.encode(JSON.stringify({ v: 1, previewToken: Date.now() })),
+                compress: true,
+              },
+            ];
+            const willHaveAudio = !opts.viewerOnly && deck.audioTrackCount > 0;
+            if (willHaveAudio) {
+              previewAtts.push({
+                name: prevAudioName || 'audio.opus',
+                mime: existingMeta.audioMime || 'audio/ogg',
+                data: new Uint8Array([0x4f, 0x67, 0x67, 0x53]),
+                compress: false,
+              });
+            }
+            attachmentPlan = await analyzePdfAttachmentUpdate(pdfBytes, previewAtts, { viewerHint: willHaveAudio });
+          }
+        }
+      } catch { /* non-fatal preview inspection */ }
+
       if (token !== job.inspectToken) return;
       job.inspect = {
         slideCount: deck.slides.length,
@@ -349,6 +467,8 @@ function initUI() {
         missing: deck.missing,
         pdfPages,
         includeHiddenUsed: opts.includeHidden,
+        attachmentInfo,
+        attachmentPlan,
       };
     } catch (err) {
       if (token !== job.inspectToken) return;
@@ -397,10 +517,13 @@ function initUI() {
           pdfFile: null,
           soloPaired: false,
           overrideHidden: null,
+          overrideAttachMode: null,
           inspect: null,
           inspectError: '',
           inspecting: false,
           inspectToken: 0,
+          pendingDecision: null,
+          attachReport: null,
           status: 'waiting',
           pct: 0,
           progressText: '',
@@ -425,6 +548,9 @@ function initUI() {
       target.warnings = [];
       target.inspect = null;
       target.inspectError = '';
+      target.overrideAttachMode = null;
+      target.pendingDecision = null;
+      target.attachReport = null;
       target.soloPaired = false;
       target.status = target.deckFile && target.pdfFile ? 'ready' : 'waiting';
       touched.add(target);
@@ -459,6 +585,8 @@ function initUI() {
     job.status = 'running';
     job.error = '';
     job.warnings = [];
+    job.pendingDecision = null;
+    job.attachReport = null;
     job.pct = 2;
     job.progressText = 'Starte …';
     render();
@@ -469,21 +597,30 @@ function initUI() {
         deckFile: job.deckFile,
         pdfFile: job.pdfFile,
         ...opts,
+        onDeadFilesDecision(plan) {
+          return new Promise((resolve) => {
+            job.pendingDecision = { plan, resolve };
+            render();
+          });
+        },
         onProgress(ev) {
           job.pct = ev.pct;
           job.progressText = ev.text;
           updateJobProgressDom(job);
         },
       });
+      job.pendingDecision = null;
       job.outputBytes = res.outputBytes;
       job.outputName = res.outputName;
       job.meta = res.meta;
       job.warnings = res.warnings;
+      job.attachReport = res.attachReport || null;
       job.outputUrl = URL.createObjectURL(new Blob([res.outputBytes], { type: 'application/pdf' }));
       job.status = 'done';
       job.pct = 100;
       job.progressText = 'Fertig';
     } catch (err) {
+      job.pendingDecision = null;
       job.status = 'error';
       job.error = err.message || String(err);
     }
@@ -688,6 +825,47 @@ function initUI() {
           }
           info.appendChild(warnBox);
         }
+
+        if (job.inspect.attachmentInfo && job.inspect.attachmentInfo.text) {
+          const attLine = document.createElement('div');
+          attLine.className = 'job-info-line';
+          attLine.textContent = job.inspect.attachmentInfo.text;
+          info.appendChild(attLine);
+        } else if (job.inspect.attachmentPlan && job.inspect.attachmentPlan.deadFiles.length > 0) {
+          const p = job.inspect.attachmentPlan;
+          const sigDead = p.deadBytes >= 32768 || p.deadFiles.some((f) => f.name !== 'pdfstage.json');
+          if (sigDead) {
+            const deadNames = p.deadFiles
+              .filter((f) => f.name !== 'pdfstage.json' || p.deadFiles.length === 1)
+              .map((f) => `${f.name} (${formatBytes(f.bytes)})`)
+              .join(', ');
+            const attLine = document.createElement('div');
+            attLine.className = p.canReplace ? 'job-info-line' : 'job-warn';
+            if (p.canReplace) {
+              const effMode = readAttachMode(job);
+              const extraNote = p.replaceStrategy === 'revision-replay' ? ', spätere PDF-Annotationen bleiben erhalten' : '';
+              const modeTxt = effMode === 'append'
+                ? `Modus: Anhängen (+${formatBytes(p.deadBytes)} Altlast)`
+                : effMode === 'ask'
+                  ? `Ersetzen möglich (–${formatBytes(p.reclaimableBytes)}${extraNote}) · Fragt beim Erstellen`
+                  : `Altlast wird sauber entfernt (–${formatBytes(p.reclaimableBytes)}${extraNote})`;
+              attLine.append(`Bestehende Anhänge (${deadNames}) · ${modeTxt} `);
+              const toggleBtn = document.createElement('button');
+              toggleBtn.type = 'button';
+              toggleBtn.className = 'btn-inline';
+              toggleBtn.disabled = job.status === 'running';
+              toggleBtn.textContent = effMode === 'append' ? 'Auf Ersetzen umstellen' : 'Auf Anhängen umstellen';
+              toggleBtn.addEventListener('click', () => {
+                job.overrideAttachMode = effMode === 'append' ? 'replace' : 'append';
+                render();
+              });
+              attLine.appendChild(toggleBtn);
+            } else {
+              attLine.textContent = `Bestehende Anhänge (${deadNames}) · Entstehen ${formatBytes(p.deadBytes)} Altlast beim Anhängen (${p.replaceBlockedReason}).`;
+            }
+            info.appendChild(attLine);
+          }
+        }
       }
 
       const actions = document.createElement('div');
@@ -751,13 +929,70 @@ function initUI() {
         prog.appendChild(track);
         prog.appendChild(lbl);
         card.appendChild(prog);
+
+        if (job.pendingDecision && job.pendingDecision.plan) {
+          const dp = job.pendingDecision.plan;
+          const dec = job.pendingDecision;
+          const deadNames = dp.deadFiles
+            .filter((f) => f.name !== 'pdfstage.json' || dp.deadFiles.length === 1)
+            .map((f) => `${f.name} (${formatBytes(f.bytes)})`)
+            .join(', ');
+          const box = document.createElement('div');
+          box.className = 'job-confirm';
+          const msg = document.createElement('div');
+          const annotNote = dp.replaceStrategy === 'revision-replay'
+            ? ' Spätere PDF-Annotationen bleiben dabei erhalten.'
+            : '';
+          msg.textContent = `Im PDF liegt bereits ${deadNames}. Ohne Entfernen würden ${formatBytes(dp.deadBytes)} verwaiste Daten im PDF verbleiben.${annotNote}`;
+          const btnRow = document.createElement('div');
+          btnRow.className = 'job-confirm-actions';
+
+          const replaceBtn = document.createElement('button');
+          replaceBtn.type = 'button';
+          replaceBtn.className = 'btn-primary';
+          replaceBtn.textContent = `Alte Anhänge ersetzen (–${formatBytes(dp.reclaimableBytes)})`;
+          replaceBtn.addEventListener('click', () => {
+            job.pendingDecision = null;
+            dec.resolve('replace');
+            render();
+          });
+
+          const appendBtn = document.createElement('button');
+          appendBtn.type = 'button';
+          appendBtn.className = 'btn-secondary';
+          appendBtn.textContent = `Anhängen (+${formatBytes(dp.deadBytes)})`;
+          appendBtn.addEventListener('click', () => {
+            job.pendingDecision = null;
+            dec.resolve('append');
+            render();
+          });
+
+          btnRow.appendChild(replaceBtn);
+          btnRow.appendChild(appendBtn);
+          box.appendChild(msg);
+          box.appendChild(btnRow);
+          card.appendChild(box);
+        }
       }
 
       if (job.status === 'done' && job.meta) {
         const summary = document.createElement('div');
         summary.className = 'job-summary';
         const dur = job.meta.audio ? `Dauer ${formatDuration(job.meta.duration)} · ` : 'Nur Folien & Kapitel · ';
-        summary.textContent = `${dur}${job.outputName} · Quelldatei ${formatBytes(job.deckFile.size)} → ${formatBytes(job.outputBytes.length)}`;
+        let attachNote = '';
+        if (job.attachReport) {
+          const { appliedMode, plan } = job.attachReport;
+          if (appliedMode === 'noop') {
+            attachNote = ' · Unverändert (0 B)';
+          } else if (appliedMode === 'replace' && plan && plan.reclaimableBytes > 0) {
+            attachNote = plan.replaceStrategy === 'revision-replay'
+              ? ` · Altlast entfernt (–${formatBytes(plan.reclaimableBytes)}), PDF-Annotationen erhalten`
+              : ` · Altlast entfernt (–${formatBytes(plan.reclaimableBytes)})`;
+          } else if (appliedMode === 'append' && plan && plan.deadBytes > 0) {
+            attachNote = ` · Angehängt (+${formatBytes(plan.deadBytes)} Altlast)`;
+          }
+        }
+        summary.textContent = `${dur}${job.outputName} · Quelldatei ${formatBytes(job.deckFile.size)} → ${formatBytes(job.outputBytes.length)}${attachNote}`;
         card.appendChild(summary);
       }
 
@@ -810,13 +1045,30 @@ function initUI() {
     if (files.length > 0) addFiles(files);
   });
 
+  const reinspectAllReady = () => {
+    for (const job of jobs) {
+      if (job.deckFile && job.pdfFile && job.status !== 'running') {
+        inspectJob(job);
+      }
+    }
+  };
   hiddenInput.addEventListener('change', () => {
     for (const job of jobs) {
-      if (job.overrideHidden === null && job.deckFile && job.pdfFile) {
+      if (job.overrideHidden === null && job.deckFile && job.pdfFile && job.status !== 'running') {
         inspectJob(job);
       }
     }
   });
+  silentInput.addEventListener('change', reinspectAllReady);
+  tailInput.addEventListener('change', reinspectAllReady);
+  bitrateInput.addEventListener('change', reinspectAllReady);
+  viewerOnlyInput.addEventListener('change', reinspectAllReady);
+  if (attachModeInput) {
+    attachModeInput.addEventListener('change', () => {
+      saveAttachMode(attachModeInput.value);
+      render();
+    });
+  }
 
   runAllBtn.addEventListener('click', runAllReady);
   zipAllBtn.addEventListener('click', downloadAllZip);

@@ -1,0 +1,725 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "classic-attach-and-zero-byte-noop",
+      "fixture": "classic-1p.pdf",
+      "steps": [
+        {
+          "files": [
+            {
+              "name": "pdfstage.json",
+              "mime": "application/json",
+              "description": "",
+              "dataUtf8": "{\"v\":1,\"title\":\"Deck1\",\"audio\":\"audio.opus\",\"provenance\":{\"convertedAt\":\"2026-11-26T08:00:00Z\"}}",
+              "compress": true
+            },
+            {
+              "name": "audio.opus",
+              "mime": "audio/ogg",
+              "description": "",
+              "dataUtf8": "CLASSIC-AUDIO-V1",
+              "compress": false
+            }
+          ],
+          "viewerHint": false,
+          "mode": "replace",
+          "expect": {
+            "noOp": false,
+            "appliedMode": "append",
+            "prefixMatchesFixture": true,
+            "expectAttachments": {
+              "pdfstage.json": "{\"v\":1,\"title\":\"Deck1\",\"audio\":\"audio.opus\",\"provenance\":{\"convertedAt\":\"2026-11-26T08:00:00Z\"}}",
+              "audio.opus": "CLASSIC-AUDIO-V1"
+            }
+          }
+        },
+        {
+          "files": [
+            {
+              "name": "pdfstage.json",
+              "mime": "application/json",
+              "description": "",
+              "dataUtf8": "{\"v\":1,\"title\":\"Deck1\",\"audio\":\"audio.opus\",\"provenance\":{\"convertedAt\":\"2026-11-26T09:15:00Z\"}}",
+              "compress": true
+            },
+            {
+              "name": "audio.opus",
+              "mime": "audio/ogg",
+              "description": "",
+              "dataUtf8": "CLASSIC-AUDIO-V1",
+              "compress": false
+            }
+          ],
+          "viewerHint": false,
+          "mode": "replace",
+          "expect": {
+            "noOp": true,
+            "appliedMode": "noop",
+            "byteEqualToPrev": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "metadata-and-hint-upgrade-reuses-audio",
+      "fixture": "classic-1p.pdf",
+      "steps": [
+        {
+          "files": [
+            {
+              "name": "pdfstage.json",
+              "mime": "application/json",
+              "description": "",
+              "dataUtf8": "{\"v\":1,\"title\":\"Alt\",\"audio\":\"audio.opus\",\"duration\":3,\"starts\":[0],\"titles\":[\"A\"]}",
+              "compress": true
+            },
+            {
+              "name": "audio.opus",
+              "mime": "audio/ogg",
+              "description": "",
+              "dataUtf8": "UNIQUE-LARGE-AUDIO-PAYLOAD-DO-NOT-DUPLICATE",
+              "compress": false
+            }
+          ],
+          "viewerHint": false,
+          "mode": "replace",
+          "expect": {
+            "noOp": false,
+            "prefixMatchesFixture": true
+          }
+        },
+        {
+          "files": [
+            {
+              "name": "pdfstage.json",
+              "mime": "application/json",
+              "description": "",
+              "dataUtf8": "{\"v\":1,\"title\":\"Neu\",\"audio\":\"audio.opus\",\"duration\":3,\"starts\":[0],\"titles\":[\"A\"],\"provenance\":{\"convertedAt\":\"2026-11-26T08:00:00Z\"}}",
+              "compress": true
+            },
+            {
+              "name": "audio.opus",
+              "mime": "audio/ogg",
+              "description": "",
+              "dataUtf8": "UNIQUE-LARGE-AUDIO-PAYLOAD-DO-NOT-DUPLICATE",
+              "compress": false
+            }
+          ],
+          "viewerHint": true,
+          "mode": "replace",
+          "expect": {
+            "noOp": false,
+            "canReplace": true,
+            "appliedMode": "replace",
+            "rawOccurrences": {
+              "UNIQUE-LARGE-AUDIO-PAYLOAD-DO-NOT-DUPLICATE": 1
+            },
+            "mustContainRaw": [
+              "/PrintState /OFF",
+              "Enth\\344lt Audio f\\374r pdfstage.github.io"
+            ],
+            "expectAttachments": {
+              "pdfstage.json": "{\"v\":1,\"title\":\"Neu\",\"audio\":\"audio.opus\",\"duration\":3,\"starts\":[0],\"titles\":[\"A\"],\"provenance\":{\"convertedAt\":\"2026-11-26T08:00:00Z\"}}",
+              "audio.opus": "UNIQUE-LARGE-AUDIO-PAYLOAD-DO-NOT-DUPLICATE"
+            }
+          }
+        },
+        {
+          "files": [
+            {
+              "name": "pdfstage.json",
+              "mime": "application/json",
+              "description": "",
+              "dataUtf8": "{\"v\":1,\"title\":\"Neu\",\"audio\":\"audio.opus\",\"duration\":3,\"starts\":[0],\"titles\":[\"A\"],\"provenance\":{\"convertedAt\":\"2026-11-26T09:50:00Z\"}}",
+              "compress": true
+            },
+            {
+              "name": "audio.opus",
+              "mime": "audio/ogg",
+              "description": "",
+              "dataUtf8": "UNIQUE-LARGE-AUDIO-PAYLOAD-DO-NOT-DUPLICATE",
+              "compress": false
+            }
+          ],
+          "viewerHint": true,
+          "mode": "replace",
+          "expect": {
+            "noOp": true,
+            "appliedMode": "noop",
+            "byteEqualToPrev": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "replace-tail-truncate-removes-dead-audio",
+      "fixture": "classic-1p.pdf",
+      "steps": [
+        {
+          "files": [
+            {
+              "name": "pdfstage.json",
+              "mime": "application/json",
+              "description": "",
+              "dataUtf8": "{\"v\":1,\"title\":\"D\",\"audio\":\"audio.opus\",\"duration\":2,\"starts\":[0]}",
+              "compress": true
+            },
+            {
+              "name": "audio.opus",
+              "mime": "audio/ogg",
+              "description": "",
+              "dataUtf8": "OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-OLD-AUDIO-V1-BLOCK-",
+              "compress": false
+            }
+          ],
+          "viewerHint": true,
+          "mode": "replace",
+          "expect": {
+            "noOp": false,
+            "prefixMatchesFixture": true
+          }
+        },
+        {
+          "files": [
+            {
+              "name": "pdfstage.json",
+              "mime": "application/json",
+              "description": "",
+              "dataUtf8": "{\"v\":1,\"title\":\"D\",\"audio\":\"audio.opus\",\"duration\":3,\"starts\":[0]}",
+              "compress": true
+            },
+            {
+              "name": "audio.opus",
+              "mime": "audio/ogg",
+              "description": "",
+              "dataUtf8": "NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-",
+              "compress": false
+            }
+          ],
+          "viewerHint": true,
+          "mode": "replace",
+          "expect": {
+            "noOp": false,
+            "canReplace": true,
+            "replaceStrategy": "tail-truncate",
+            "appliedMode": "replace",
+            "mustNotContainRaw": [
+              "OLD-AUDIO-V1-BLOCK-"
+            ],
+            "rawOccurrences": {
+              "NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-": 1
+            },
+            "expectAttachments": {
+              "audio.opus": "NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-NEW-AUDIO-V2-BLOCK-",
+              "pdfstage.json": "{\"v\":1,\"title\":\"D\",\"audio\":\"audio.opus\",\"duration\":3,\"starts\":[0]}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "append-mode-preserves-prefix",
+      "fixture": "classic-1p.pdf",
+      "steps": [
+        {
+          "files": [
+            {
+              "name": "pdfstage.json",
+              "mime": "application/json",
+              "description": "",
+              "dataUtf8": "{\"v\":1,\"title\":\"Deck\",\"audio\":\"audio.opus\"}",
+              "compress": true
+            },
+            {
+              "name": "audio.opus",
+              "mime": "audio/ogg",
+              "description": "",
+              "dataUtf8": "AUDIO-V1-KEEP-PREFIX",
+              "compress": false
+            }
+          ],
+          "viewerHint": false,
+          "mode": "replace",
+          "expect": {
+            "noOp": false
+          }
+        },
+        {
+          "files": [
+            {
+              "name": "pdfstage.json",
+              "mime": "application/json",
+              "description": "",
+              "dataUtf8": "{\"v\":1,\"title\":\"Deck Neu\",\"audio\":\"audio.opus\"}",
+              "compress": true
+            },
+            {
+              "name": "audio.opus",
+              "mime": "audio/ogg",
+              "description": "",
+              "dataUtf8": "AUDIO-V2-APPENDED",
+              "compress": false
+            }
+          ],
+          "viewerHint": false,
+          "mode": "append",
+          "expect": {
+            "noOp": false,
+            "canReplace": true,
+            "appliedMode": "append",
+            "prefixPreserved": true,
+            "mustContainRaw": [
+              "AUDIO-V1-KEEP-PREFIX",
+              "AUDIO-V2-APPENDED"
+            ],
+            "expectAttachments": {
+              "audio.opus": "AUDIO-V2-APPENDED"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "replace-revision-replay-preserves-viewer-annotations",
+      "fixture": "viewer-annot-classic.pdf",
+      "steps": [
+        {
+          "files": [
+            {
+              "name": "pdfstage.json",
+              "mime": "application/json",
+              "description": "",
+              "dataUtf8": "{\"v\":1,\"title\":\"Vorlesung Neu\",\"audio\":\"audio.opus\"}",
+              "compress": true
+            },
+            {
+              "name": "audio.opus",
+              "mime": "audio/ogg",
+              "description": "",
+              "dataUtf8": "NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-",
+              "compress": false
+            }
+          ],
+          "viewerHint": true,
+          "mode": "replace",
+          "expect": {
+            "noOp": false,
+            "canReplace": true,
+            "replaceStrategy": "revision-replay",
+            "revisionsAfterDead": 1,
+            "appliedMode": "replace",
+            "mustNotContainRaw": [
+              "VIEWER-OLD-AUDIO-V1-"
+            ],
+            "expectAttachments": {
+              "audio.opus": "NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-NEW-VIEWER-AUDIO-V2-",
+              "pdfstage.json": "{\"v\":1,\"title\":\"Vorlesung Neu\",\"audio\":\"audio.opus\"}"
+            },
+            "expectPageAnnotNMs": [
+              [
+                "viewer-p1",
+                "pdfstage-hint-stamp",
+                "pdfstage-hint-link",
+                "pdfstage-hint-close"
+              ],
+              [
+                "viewer-p2"
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "replace-revision-replay-with-objstm",
+      "fixture": "viewer-annot-objstm.pdf",
+      "steps": [
+        {
+          "files": [
+            {
+              "name": "pdfstage.json",
+              "mime": "application/json",
+              "description": "",
+              "dataUtf8": "{\"v\":1,\"title\":\"S2\",\"audio\":\"audio.opus\"}",
+              "compress": true
+            },
+            {
+              "name": "audio.opus",
+              "mime": "audio/ogg",
+              "description": "",
+              "dataUtf8": "OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-",
+              "compress": false
+            }
+          ],
+          "viewerHint": false,
+          "mode": "replace",
+          "expect": {
+            "noOp": false,
+            "canReplace": true,
+            "replaceStrategy": "revision-replay",
+            "revisionsAfterDead": 1,
+            "appliedMode": "replace",
+            "mustNotContainRaw": [
+              "OBJSTM-OLD-AUDIO-V1-"
+            ],
+            "expectAttachments": {
+              "audio.opus": "OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-OBJSTM-NEW-AUDIO-V2-"
+            },
+            "expectPageAnnotNMs": [
+              [
+                "viewer-objstm-p1"
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "preserve-foreign-attachments-and-existing-names",
+      "fixture": "classic-dests.pdf",
+      "steps": [
+        {
+          "files": [
+            {
+              "name": "handout.txt",
+              "mime": "text/plain",
+              "description": "",
+              "dataUtf8": "HANDOUT-CONTENT-KEEP-ME",
+              "compress": false
+            },
+            {
+              "name": "pdfstage.json",
+              "mime": "application/json",
+              "description": "",
+              "dataUtf8": "{\"v\":1,\"audio\":\"audio.opus\"}",
+              "compress": true
+            },
+            {
+              "name": "audio.opus",
+              "mime": "audio/ogg",
+              "description": "",
+              "dataUtf8": "FOREIGN-AUDIO-V1",
+              "compress": false
+            }
+          ],
+          "viewerHint": false,
+          "mode": "replace",
+          "expect": {
+            "noOp": false,
+            "prefixMatchesFixture": true
+          }
+        },
+        {
+          "files": [
+            {
+              "name": "pdfstage.json",
+              "mime": "application/json",
+              "description": "",
+              "dataUtf8": "{\"v\":1,\"title\":\"Neu\",\"audio\":\"audio.opus\"}",
+              "compress": true
+            },
+            {
+              "name": "audio.opus",
+              "mime": "audio/ogg",
+              "description": "",
+              "dataUtf8": "FOREIGN-AUDIO-V2",
+              "compress": false
+            }
+          ],
+          "viewerHint": false,
+          "mode": "replace",
+          "expect": {
+            "noOp": false,
+            "canReplace": true,
+            "appliedMode": "replace",
+            "preservedForeignNames": [
+              "handout.txt"
+            ],
+            "mustContainRaw": [
+              "/Dests 5 0 R"
+            ],
+            "mustNotContainRaw": [
+              "FOREIGN-AUDIO-V1"
+            ],
+            "expectAttachments": {
+              "handout.txt": "HANDOUT-CONTENT-KEEP-ME",
+              "audio.opus": "FOREIGN-AUDIO-V2"
+            }
+          }
+        },
+        {
+          "files": [
+            {
+              "name": "pdfstage.json",
+              "mime": "application/json",
+              "description": "",
+              "dataUtf8": "{\"v\":1,\"title\":\"ViewerOnly\"}",
+              "compress": true
+            }
+          ],
+          "viewerHint": false,
+          "mode": "replace",
+          "expect": {
+            "noOp": false,
+            "canReplace": true,
+            "appliedMode": "replace",
+            "preservedForeignNames": [
+              "handout.txt"
+            ],
+            "mustContainRaw": [
+              "/Dests 5 0 R"
+            ],
+            "mustNotContainRaw": [
+              "FOREIGN-AUDIO-V2"
+            ],
+            "expectAttachments": {
+              "handout.txt": "HANDOUT-CONTENT-KEEP-ME",
+              "pdfstage.json": "{\"v\":1,\"title\":\"ViewerOnly\"}"
+            },
+            "expectAbsentAttachments": [
+              "audio.opus"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "rotate90-cropbox-ocg-merge-and-idempotency",
+      "fixture": "classic-rotate90-ocg.pdf",
+      "steps": [
+        {
+          "files": [
+            {
+              "name": "pdfstage.json",
+              "mime": "application/json",
+              "description": "",
+              "dataUtf8": "{\"v\":1,\"title\":\"HintDeck\",\"audio\":\"audio.opus\",\"duration\":4,\"starts\":[0],\"titles\":[\"Eins\"],\"provenance\":{\"convertedAt\":\"2026-11-26T08:00:00Z\"}}",
+              "compress": true
+            },
+            {
+              "name": "audio.opus",
+              "mime": "audio/ogg",
+              "description": "",
+              "dataUtf8": "OggS-HINT-AUDIO-V1",
+              "compress": false
+            }
+          ],
+          "viewerHint": true,
+          "mode": "replace",
+          "expect": {
+            "noOp": false,
+            "prefixMatchesFixture": true,
+            "expectOcgNames": [
+              "UserLayer",
+              "pdfstage-hint"
+            ],
+            "expectPageAnnotNMs": [
+              [
+                "user-mark-1",
+                "pdfstage-hint-stamp",
+                "pdfstage-hint-link",
+                "pdfstage-hint-close"
+              ]
+            ]
+          }
+        },
+        {
+          "files": [
+            {
+              "name": "pdfstage.json",
+              "mime": "application/json",
+              "description": "",
+              "dataUtf8": "{\"v\":1,\"title\":\"HintDeck\",\"audio\":\"audio.opus\",\"duration\":4,\"starts\":[0],\"titles\":[\"Eins\"],\"provenance\":{\"convertedAt\":\"2026-11-26T09:15:00Z\"}}",
+              "compress": true
+            },
+            {
+              "name": "audio.opus",
+              "mime": "audio/ogg",
+              "description": "",
+              "dataUtf8": "OggS-HINT-AUDIO-V1",
+              "compress": false
+            }
+          ],
+          "viewerHint": true,
+          "mode": "replace",
+          "expect": {
+            "noOp": true,
+            "appliedMode": "noop",
+            "byteEqualToPrev": true
+          }
+        },
+        {
+          "files": [
+            {
+              "name": "pdfstage.json",
+              "mime": "application/json",
+              "description": "",
+              "dataUtf8": "{\"v\":1,\"title\":\"HintDeck2\",\"audio\":\"audio.opus\",\"duration\":5,\"starts\":[0],\"titles\":[\"Eins\"]}",
+              "compress": true
+            },
+            {
+              "name": "audio.opus",
+              "mime": "audio/ogg",
+              "description": "",
+              "dataUtf8": "OggS-HINT-AUDIO-V2",
+              "compress": false
+            }
+          ],
+          "viewerHint": true,
+          "mode": "replace",
+          "expect": {
+            "noOp": false,
+            "canReplace": true,
+            "replaceStrategy": "tail-truncate",
+            "appliedMode": "replace",
+            "prefixMatchesFixture": true,
+            "mustNotContainRaw": [
+              "OggS-HINT-AUDIO-V1"
+            ],
+            "expectOcgNames": [
+              "UserLayer",
+              "pdfstage-hint"
+            ],
+            "expectPageAnnotNMs": [
+              [
+                "user-mark-1",
+                "pdfstage-hint-stamp",
+                "pdfstage-hint-link",
+                "pdfstage-hint-close"
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "linearized-backwards-prev-replace",
+      "fixture": "linearized-like.pdf",
+      "steps": [
+        {
+          "files": [
+            {
+              "name": "pdfstage.json",
+              "mime": "application/json",
+              "description": "",
+              "dataUtf8": "{\"v\":1,\"title\":\"L1\",\"audio\":\"audio.opus\"}",
+              "compress": true
+            },
+            {
+              "name": "audio.opus",
+              "mime": "audio/ogg",
+              "description": "",
+              "dataUtf8": "LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-LINEAR-AUDIO-V1-",
+              "compress": false
+            }
+          ],
+          "viewerHint": true,
+          "mode": "replace",
+          "expect": {
+            "noOp": false,
+            "prefixMatchesFixture": true
+          }
+        },
+        {
+          "files": [
+            {
+              "name": "pdfstage.json",
+              "mime": "application/json",
+              "description": "",
+              "dataUtf8": "{\"v\":1,\"title\":\"L2\",\"audio\":\"audio.opus\"}",
+              "compress": true
+            },
+            {
+              "name": "audio.opus",
+              "mime": "audio/ogg",
+              "description": "",
+              "dataUtf8": "LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-",
+              "compress": false
+            }
+          ],
+          "viewerHint": true,
+          "mode": "replace",
+          "expect": {
+            "noOp": false,
+            "canReplace": true,
+            "replaceStrategy": "tail-truncate",
+            "appliedMode": "replace",
+            "prefixMatchesFixture": true,
+            "mustNotContainRaw": [
+              "LINEAR-AUDIO-V1-"
+            ],
+            "expectAttachments": {
+              "audio.opus": "LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-LINEAR-AUDIO-V2-"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "blocked-on-single-rev-full-save",
+      "fixture": "flat-single-rev-audio.pdf",
+      "steps": [
+        {
+          "files": [
+            {
+              "name": "audio.opus",
+              "mime": "audio/ogg",
+              "description": "",
+              "dataUtf8": "NEW-FLAT-AUDIO",
+              "compress": false
+            }
+          ],
+          "viewerHint": false,
+          "mode": "replace",
+          "expect": {
+            "noOp": false,
+            "canReplace": false,
+            "hasBlockedReason": true,
+            "appliedMode": "append",
+            "prefixMatchesFixture": true,
+            "expectAttachments": {
+              "audio.opus": "NEW-FLAT-AUDIO"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "blocked-on-signed-pdf",
+      "fixture": "signed-after-stage.pdf",
+      "steps": [
+        {
+          "files": [
+            {
+              "name": "pdfstage.json",
+              "mime": "application/json",
+              "description": "",
+              "dataUtf8": "{\"v\":1,\"title\":\"S2\",\"audio\":\"audio.opus\"}",
+              "compress": true
+            },
+            {
+              "name": "audio.opus",
+              "mime": "audio/ogg",
+              "description": "",
+              "dataUtf8": "SIGNED-NEW-AUDIO-V2",
+              "compress": false
+            }
+          ],
+          "viewerHint": false,
+          "mode": "replace",
+          "expect": {
+            "noOp": false,
+            "canReplace": false,
+            "hasBlockedReason": true,
+            "appliedMode": "append",
+            "prefixMatchesFixture": true,
+            "expectAttachments": {
+              "audio.opus": "SIGNED-NEW-AUDIO-V2"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

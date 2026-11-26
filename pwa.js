@@ -3,12 +3,17 @@
 (function (global) {
   "use strict";
 
-  var APP_VERSION = "0.8.4";
+  var APP_VERSION = "0.8.5";
   var HANDOFF_DB_NAME = "pdfstage-handoff";
   var HANDOFF_DB_VERSION = 1;
   var HANDOFF_STORE = "handoffs";
   var HANDOFF_SESSION_KEY = "pdfstage:handoffId";
   var HANDOFF_MAX_AGE_MS = 5 * 60 * 1000;
+  var SESSION_PREFIX = "session:";
+  var SESSION_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+  var SESSION_MAX_COUNT = 5;
+  var TAB_ID_KEY = "pdfstage:tabId";
+  var TAB_STATE_KEY = "pdfstage:tabState";
   var DEFAULT_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 
   var currentScript = typeof document !== "undefined" ? document.currentScript : null;
@@ -161,19 +166,39 @@
 
   async function cleanupStaleHandoffs(maxAgeMs) {
     var limit = typeof maxAgeMs === "number" && maxAgeMs >= 0 ? maxAgeMs : HANDOFF_MAX_AGE_MS;
-    var cutoff = Date.now() - limit;
+    var now = Date.now();
+    var cutoff = now - limit;
+    var sessionCutoff = now - SESSION_MAX_AGE_MS;
     var db = await openHandoffDb();
     try {
       return await new Promise(function (resolve) {
         var deleted = 0;
+        var sessions = [];
         var tx = db.transaction(HANDOFF_STORE, "readwrite");
         var store = tx.objectStore(HANDOFF_STORE);
         var req = store.openCursor();
         req.onsuccess = function () {
           var cursor = req.result;
-          if (!cursor) return;
+          if (!cursor) {
+            if (sessions.length > SESSION_MAX_COUNT) {
+              sessions.sort(function (a, b) { return b.updatedAt - a.updatedAt; });
+              for (var i = SESSION_MAX_COUNT; i < sessions.length; i++) {
+                try { store.delete(sessions[i].id); deleted++; } catch (e) {}
+              }
+            }
+            return;
+          }
           var val = cursor.value;
-          if (!val || typeof val.createdAt !== "number" || val.createdAt < cutoff) {
+          var key = String(cursor.key || (val && val.id) || "");
+          if (key.indexOf(SESSION_PREFIX) === 0) {
+            var ts = val && typeof val.updatedAt === "number" ? val.updatedAt : (val && val.createdAt);
+            if (!val || !val.fileHandle || typeof ts !== "number" || ts < sessionCutoff) {
+              cursor.delete();
+              deleted++;
+            } else {
+              sessions.push({ id: key, updatedAt: ts });
+            }
+          } else if (!val || typeof val.createdAt !== "number" || val.createdAt < cutoff) {
             cursor.delete();
             deleted++;
           }
@@ -182,6 +207,146 @@
         tx.oncomplete = function () { resolve(deleted); };
         tx.onerror = function () { resolve(deleted); };
         tx.onabort = function () { resolve(deleted); };
+      });
+    } finally {
+      try { db.close(); } catch (e) {}
+    }
+  }
+
+  function getTabId() {
+    try {
+      return sessionStorage.getItem(TAB_ID_KEY) || "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function getOrCreateTabId() {
+    var existing = getTabId();
+    if (existing) return existing;
+    var next = generateHandoffId();
+    try {
+      sessionStorage.setItem(TAB_ID_KEY, next);
+    } catch (e) {}
+    return next;
+  }
+
+  function saveTabStateSync(payload) {
+    try {
+      sessionStorage.setItem(TAB_STATE_KEY, JSON.stringify(payload));
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function loadTabStateSync() {
+    try {
+      var raw = sessionStorage.getItem(TAB_STATE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function clearTabStateSync() {
+    try {
+      sessionStorage.removeItem(TAB_STATE_KEY);
+    } catch (e) {}
+  }
+
+  function sessionKey(idOrTabId) {
+    var s = String(idOrTabId || "");
+    if (!s) return "";
+    return s.indexOf(SESSION_PREFIX) === 0 ? s : (SESSION_PREFIX + s);
+  }
+
+  async function saveSessionRecord(tabId, record) {
+    var key = sessionKey(tabId);
+    if (!key || !record || !record.fileHandle) return false;
+    var now = Date.now();
+    var entry = {
+      id: key,
+      kind: "session",
+      tabId: String(tabId),
+      fileHandle: record.fileHandle,
+      fileMeta: record.fileMeta || null,
+      state: record.state || null,
+      createdAt: record.createdAt || now,
+      updatedAt: record.updatedAt || now
+    };
+    var db = await openHandoffDb();
+    try {
+      try {
+        await putRecordOnce(db, entry);
+        return true;
+      } catch (err) {
+        if (err && err.name === "DataCloneError") {
+          return false;
+        }
+        throw err;
+      }
+    } finally {
+      try { db.close(); } catch (e) {}
+    }
+  }
+
+  async function getSessionRecord(idOrTabId) {
+    var key = sessionKey(idOrTabId);
+    if (!key) return null;
+    var db = await openHandoffDb();
+    try {
+      return await new Promise(function (resolve, reject) {
+        var tx = db.transaction(HANDOFF_STORE, "readonly");
+        var req = tx.objectStore(HANDOFF_STORE).get(key);
+        req.onsuccess = function () { resolve(req.result || null); };
+        req.onerror = function () { reject(req.error || new Error("IndexedDB-Lesefehler")); };
+      });
+    } finally {
+      try { db.close(); } catch (e) {}
+    }
+  }
+
+  async function getLatestSessionRecord() {
+    var db = await openHandoffDb();
+    try {
+      return await new Promise(function (resolve, reject) {
+        var best = null;
+        var bestTs = -1;
+        var tx = db.transaction(HANDOFF_STORE, "readonly");
+        var req = tx.objectStore(HANDOFF_STORE).openCursor();
+        req.onsuccess = function () {
+          var cursor = req.result;
+          if (!cursor) { resolve(best); return; }
+          var val = cursor.value;
+          var key = String(cursor.key || (val && val.id) || "");
+          if (key.indexOf(SESSION_PREFIX) === 0 && val && val.fileHandle) {
+            var ts = typeof val.updatedAt === "number" ? val.updatedAt : (val.createdAt || 0);
+            if (ts > bestTs) {
+              bestTs = ts;
+              best = val;
+            }
+          }
+          cursor.continue();
+        };
+        req.onerror = function () { reject(req.error || new Error("IndexedDB-Lesefehler")); };
+      });
+    } finally {
+      try { db.close(); } catch (e) {}
+    }
+  }
+
+  async function deleteSessionRecord(idOrTabId) {
+    var key = sessionKey(idOrTabId);
+    if (!key) return;
+    var db = await openHandoffDb();
+    try {
+      await new Promise(function (resolve, reject) {
+        var tx = db.transaction(HANDOFF_STORE, "readwrite");
+        tx.objectStore(HANDOFF_STORE).delete(key);
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { reject(tx.error || new Error("IndexedDB-L\u00f6schfehler")); };
+        tx.onabort = function () { reject(tx.error || new Error("IndexedDB-Transaktion abgebrochen")); };
       });
     } finally {
       try { db.close(); } catch (e) {}
@@ -413,6 +578,11 @@
     HANDOFF_STORE: HANDOFF_STORE,
     HANDOFF_SESSION_KEY: HANDOFF_SESSION_KEY,
     HANDOFF_MAX_AGE_MS: HANDOFF_MAX_AGE_MS,
+    SESSION_PREFIX: SESSION_PREFIX,
+    SESSION_MAX_AGE_MS: SESSION_MAX_AGE_MS,
+    SESSION_MAX_COUNT: SESSION_MAX_COUNT,
+    TAB_ID_KEY: TAB_ID_KEY,
+    TAB_STATE_KEY: TAB_STATE_KEY,
     generateHandoffId: generateHandoffId,
     setSessionHandoffId: setSessionHandoffId,
     takeSessionHandoffId: takeSessionHandoffId,
@@ -420,6 +590,15 @@
     saveHandoff: saveHandoff,
     consumeHandoff: consumeHandoff,
     cleanupStaleHandoffs: cleanupStaleHandoffs,
+    getTabId: getTabId,
+    getOrCreateTabId: getOrCreateTabId,
+    saveTabStateSync: saveTabStateSync,
+    loadTabStateSync: loadTabStateSync,
+    clearTabStateSync: clearTabStateSync,
+    saveSessionRecord: saveSessionRecord,
+    getSessionRecord: getSessionRecord,
+    getLatestSessionRecord: getLatestSessionRecord,
+    deleteSessionRecord: deleteSessionRecord,
     initPwa: initPwa
   };
 })(typeof window !== "undefined" ? window : globalThis);

@@ -11,7 +11,7 @@
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
-  #openOverlay[hidden], #wrap[hidden], #fileInput[hidden], #updateBtn[hidden], #shortcutsModal[hidden], #caret[hidden] { display: none !important; }
+  #openOverlay[hidden], #wrap[hidden], #fileInput[hidden], #updateBtn[hidden], #shortcutsModal[hidden], #caret[hidden], #resumeCard[hidden] { display: none !important; }
   body { margin:0; background:#111; color:#eee; font-family:system-ui,'Segoe UI',sans-serif; display:flex; flex-direction:column; height:100vh; }
   header { padding:10px 16px 4px; font-size:14px; color:#ccc; display:grid; grid-template-columns:minmax(max-content, 1fr) minmax(0, auto) minmax(max-content, 1fr); align-items:center; gap:12px; }
   .hdr-left { display:flex; align-items:center; gap:7px; justify-self:start; white-space:nowrap; }
@@ -37,6 +37,14 @@
   .open-sub code { background:#252834; padding:1px 5px; border-radius:4px; color:#e5e7eb; }
   #openHeroBtn { background:#ff0033; color:#fff; border:none; border-radius:8px; padding:10px 20px; font-size:14px; font-weight:600; cursor:pointer; }
   #openHeroBtn:hover { background:#e0002d; }
+  #resumeCard { margin:0 0 18px; padding:14px 16px; background:#131620; border:1px solid #353a4a; border-radius:10px; text-align:left; }
+  .resume-q { font-size:14px; font-weight:600; color:#f3f4f6; line-height:1.4; word-break:break-word; }
+  .resume-meta { font-size:12px; color:#9aa3b2; margin-top:4px; line-height:1.4; }
+  .resume-actions { display:flex; align-items:center; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  #resumeBtn { background:#2563eb; border-color:#3b82f6; color:#fff; font-weight:600; font-size:13px; padding:7px 14px; }
+  #resumeBtn:hover { background:#1d4ed8; }
+  #resumeDismissBtn { background:#232632; border-color:#3a4052; color:#cbd5e1; font-size:13px; padding:7px 12px; }
+  #resumeDismissBtn:hover { background:#2f3444; }
   .open-alt { margin-top:14px; font-size:12.5px; color:#8f96a6; }
   .open-alt a { color:#d1d5db; text-decoration:underline; text-underline-offset:2px; }
   .open-alt a:hover { color:#fff; }
@@ -191,7 +199,7 @@
 <body>
 
 <header>
-  <div class="hdr-left" inert><span class="brand">pdfstage</span><span class="app-ver" data-app-version>v0.8.4</span></div>
+  <div class="hdr-left" inert><span class="brand">pdfstage</span><span class="app-ver" data-app-version>v0.8.5</span></div>
   <div id="deckTitle" inert></div>
   <div class="hdr-right">
     <div id="folie" class="hint" inert></div>
@@ -207,6 +215,14 @@
     <div class="open-card">
       <div class="open-title">pdfstage</div>
       <div class="open-sub">Lokale <code>.pdf</code> (oder <code>.stage.pdf</code> mit eingebettetem Audio) öffnen oder hierher ziehen &mdash; 100&nbsp;% lokal im Browser.</div>
+      <div id="resumeCard" hidden inert>
+        <div id="resumeQuestion" class="resume-q"></div>
+        <div id="resumeMeta" class="resume-meta"></div>
+        <div class="resume-actions">
+          <button id="resumeBtn" type="button">Fortsetzen</button>
+          <button id="resumeDismissBtn" type="button">Verwerfen</button>
+        </div>
+      </div>
       <button id="openHeroBtn" type="button">PDF öffnen &hellip;</button>
       <div class="open-alt">Pr&auml;sentation + PDF neu packen? <a href="./cast/">Zu pdfstage / cast</a> &middot; <a href="https://github.com/pdfstage/pdfstage.github.io#readme" target="_blank" rel="noopener">Docs</a></div>
     </div>
@@ -850,6 +866,11 @@ function syncHintline() {
   }
 }
 
+let onSessionDirty = null, onSessionLoaded = null;
+function notifySessionDirty(immediateDb) {
+  if (typeof onSessionDirty === "function") onSessionDirty(Boolean(immediateDb));
+}
+
 function setTextMode(on, silent) {
   const next = Boolean(on && pdfDoc);
   if (textMode === next && !silent) return;
@@ -874,6 +895,7 @@ function setTextMode(on, silent) {
     updateCaret();
     if (!silent) toast("Textmodus beendet");
   }
+  if (!silent) notifySessionDirty(false);
   ruheNeu();
 }
 
@@ -1338,6 +1360,7 @@ async function renderAlignedTextLayer(page, textContent, viewport, container) {
   const underlineRects = extractUnderlineRects(opList, pageTransform);
 
   let divIdx = 0;
+  const placed = [];
   for (const item of textContent.items) {
     if (item.str === undefined) continue;
     const span = textDivs[divIdx++];
@@ -1367,6 +1390,8 @@ async function renderAlignedTextLayer(page, textContent, viewport, container) {
       }
     }
 
+    let boxTop = tx[5] - fontSize;
+    let boxBottom = tx[5];
     if (angle === 0) {
       const ratio = getDomBaselineOffsetRatio(
         (info && info.family) || "sans-serif",
@@ -1375,6 +1400,8 @@ async function renderAlignedTextLayer(page, textContent, viewport, container) {
       );
       const exactTop = tx[5] - fontSize * ratio;
       span.style.top = ((100 * exactTop) / pageHeight).toFixed(4) + "%";
+      boxTop = exactTop;
+      boxBottom = exactTop + fontSize;
 
       if (underlineRects.length > 0 && item.width > 0) {
         const spanLeft = tx[4];
@@ -1417,6 +1444,68 @@ async function renderAlignedTextLayer(page, textContent, viewport, container) {
         }
       }
     }
+
+    placed.push({
+      span: span,
+      top: boxTop,
+      bottom: boxBottom,
+      midY: (boxTop + boxBottom) * 0.5,
+      left: tx[4],
+      fontSize: Math.max(1, fontSize),
+      origIdx: placed.length
+    });
+  }
+
+  if (placed.length > 1) {
+    const byY = placed.slice().sort(function (a, b) {
+      return (a.midY - b.midY) || (a.left - b.left) || (a.origIdx - b.origIdx);
+    });
+    const lines = [];
+    for (let i = 0; i < byY.length; i++) {
+      const it = byY[i];
+      let matched = null;
+      for (let l = lines.length - 1; l >= 0; l--) {
+        const ln = lines[l];
+        const minH = Math.min(ln.refH, it.fontSize);
+        const overlap = Math.min(ln.bottom, it.bottom) - Math.max(ln.top, it.top);
+        if (Math.abs(it.midY - ln.midY) <= Math.max(4, minH * 0.55) || overlap > minH * 0.35) {
+          matched = ln;
+          break;
+        }
+      }
+      if (matched) {
+        matched.items.push(it);
+        const n = matched.items.length;
+        matched.midY = (matched.midY * (n - 1) + it.midY) / n;
+        if (it.top < matched.top) matched.top = it.top;
+        if (it.bottom > matched.bottom) matched.bottom = it.bottom;
+        if (it.fontSize > matched.refH) matched.refH = it.fontSize;
+      } else {
+        lines.push({
+          items: [it],
+          midY: it.midY,
+          top: it.top,
+          bottom: it.bottom,
+          refH: it.fontSize
+        });
+      }
+    }
+    lines.sort(function (a, b) { return a.midY - b.midY; });
+    const frag = document.createDocumentFragment();
+    for (let l = 0; l < lines.length; l++) {
+      if (l > 0) {
+        const br = document.createElement("br");
+        br.setAttribute("role", "presentation");
+        frag.appendChild(br);
+      }
+      const row = lines[l].items;
+      row.sort(function (a, b) { return (a.left - b.left) || (a.origIdx - b.origIdx); });
+      for (let r = 0; r < row.length; r++) {
+        frag.appendChild(row[r].span);
+      }
+    }
+    container.textContent = "";
+    container.appendChild(frag);
   }
 }
 
@@ -1439,6 +1528,7 @@ async function show(i, vomSuchen) {
   cur = i;
   syncTextLayers();
   if (!vomSuchen) setSearchStartToSlide(i);
+  notifySessionDirty(false);
   const token = ++renderToken;
   if (HAS_AUDIO) {
     if (folieEl) folieEl.textContent = "Folie " + (i + 1) + "/" + (STARTS.length || total);
@@ -1844,6 +1934,7 @@ function pauseAudio() {
   if (!audio) return;
   spieltGewollt = false;
   audio.pause();
+  notifySessionDirty(false);
 }
 function updateTimes() {
   if (!audio || !timeOEl || !timeSEl) return;
@@ -1853,6 +1944,7 @@ function updateTimes() {
   timeOEl.textContent = fmt(t) + " / " + fmt(d);
   timeSEl.textContent = fmt(t / r) + " / " + fmt(d / r);
 }
+let lastTickSyncAt = 0;
 function tick() {
   if (!audio) return;
   const t = audio.currentTime || 0;
@@ -1868,6 +1960,10 @@ function tick() {
   updateTimes();
   updateLadebalken();
   updateKapitelStriche();
+  if (pdfDoc && Date.now() - lastTickSyncAt >= 2500) {
+    lastTickSyncAt = Date.now();
+    notifySessionDirty(false);
+  }
 }
 function setTextContentTarget(el, txt) {
   if (!el) return;
@@ -1889,7 +1985,10 @@ function setRate(r, showToast) {
   audio.playbackRate = r;
   renderRateLabel(r);
   updateTimes();
-  if (showToast) toast("Tempo " + fmtRate(r) + "\u00D7");
+  if (showToast) {
+    toast("Tempo " + fmtRate(r) + "\u00D7");
+    notifySessionDirty(false);
+  }
 }
 function setVol(v) {
   if (!audio) return;
@@ -1898,12 +1997,14 @@ function setVol(v) {
   if (vol > 0) audio.muted = false;
   renderVolLabel();
   toast("Lautstärke " + Math.round(vol * 100) + "%");
+  notifySessionDirty(false);
 }
 function toggleMute() {
   if (!audio) return;
   audio.muted = !audio.muted;
   renderVolLabel();
   toast(audio.muted ? "Stumm" : "Ton an (" + Math.round(vol * 100) + "%)");
+  notifySessionDirty(false);
 }
 function seekRelative(deltaSec) {
   if (!audio) return;
@@ -2587,24 +2688,31 @@ async function loadPdfBytes(pdfBytes, fallbackTitle, sourceInfo, restoreState) {
     await show(targetPage);
     if (myToken !== loadToken) return;
     buildAllTextLayers();
+    if (restoreState && restoreState.textMode) setTextMode(true, true);
     if (HAS_AUDIO) tick();
 
     if (restoreState) {
+      const isSession = restoreState.reason === "session";
+      const okMsg = isSession ? "Fortgesetzt" : "Update geladen";
+      const playMsg = isSession
+        ? "Fortgesetzt \u2013 Leertaste oder Play zum Fortsetzen"
+        : "Update geladen \u2013 Leertaste oder Play zum Fortsetzen";
       if (nextHasAudio && restoreState.wasPlaying && audio) {
         spieltGewollt = true;
         resumeAudio();
         try {
           await audio.play();
-          toast("Update geladen");
+          toast(okMsg);
         } catch (err) {
           spieltGewollt = false;
           if (playBtn && playBtn.firstElementChild) playBtn.firstElementChild.textContent = "\u25B6";
-          toast("Update geladen – Leertaste oder Play zum Fortsetzen", 4500, false);
+          toast(playMsg, 4500, false);
         }
       } else {
-        toast("Update geladen");
+        toast(okMsg);
       }
     }
+    if (typeof onSessionLoaded === "function") onSessionLoaded();
   } catch (e) {
     if (myToken === loadToken) showErr("PDF: " + e.message);
   }
@@ -2628,11 +2736,63 @@ if (IS_EMBEDDED) {
   renderLeiste(false);
   entnehmeBytes("b64-worker").then(initialisierePdfWorker).catch(function () {});
 
+  const resumeCardEl = document.getElementById("resumeCard");
+  const resumeQuestionEl = document.getElementById("resumeQuestion");
+  const resumeMetaEl = document.getElementById("resumeMeta");
+  const resumeBtnEl = document.getElementById("resumeBtn");
+  const resumeDismissBtnEl = document.getElementById("resumeDismissBtn");
+
+  let currentTabId = window.pdfstagePwa ? window.pdfstagePwa.getOrCreateTabId() : "";
+  let pendingResumeRecord = null;
+  let lastDbPersistAt = 0;
+
+  function stripPdfExt(name) {
+    return String(name || "").replace(/\.(pdfstage|stage)\.pdf$/i, "").replace(/\.pdf$/i, "");
+  }
+
+  function formatResumePrompt(rec) {
+    const fm = (rec && rec.fileMeta) || {};
+    const st = (rec && rec.state) || {};
+    const fileTitle = fm.fallbackTitle || stripPdfExt(fm.name) || "Dokument";
+    const isAudio = st.viewMode === "audio" || (typeof st.currentTime === "number" && st.currentTime > 0);
+    const question = isAudio
+      ? ("\u201e" + fileTitle + "\u201c bei " + fmt(st.currentTime || 0) + " fortsetzen?")
+      : ("\u201e" + fileTitle + "\u201c bei Folie " + ((st.currentPage || 0) + 1) + " fortsetzen?");
+    const meta = ["Folie " + ((st.currentPage || 0) + 1)];
+    if (typeof st.playbackRate === "number" && Math.abs(st.playbackRate - 1) > 0.005) {
+      meta.push(fmtRate(st.playbackRate) + "\u00D7");
+    }
+    if (typeof st.volume === "number" && Math.abs(st.volume - 1) > 0.005) {
+      meta.push(Math.round(st.volume * 100) + " %");
+    }
+    if (st.muted) meta.push("Stumm");
+    if (st.textMode) meta.push("Textmodus");
+    return { question: question, meta: meta.join(" \u00B7 ") };
+  }
+
+  function hideResumePrompt() {
+    pendingResumeRecord = null;
+    if (resumeCardEl) {
+      resumeCardEl.hidden = true;
+      resumeCardEl.inert = true;
+    }
+  }
+
+  function showResumePrompt(rec) {
+    if (!rec || !rec.fileHandle || !resumeCardEl) return;
+    pendingResumeRecord = rec;
+    const text = formatResumePrompt(rec);
+    if (resumeQuestionEl) resumeQuestionEl.textContent = text.question;
+    if (resumeMetaEl) resumeMetaEl.textContent = text.meta;
+    resumeCardEl.hidden = false;
+    resumeCardEl.inert = false;
+  }
+
   async function openLocalFile(file, fileHandle) {
     if (!file) return;
     try {
       const buf = await file.arrayBuffer();
-      const base = file.name.replace(/\.(pdfstage|stage)\.pdf$/i, "").replace(/\.pdf$/i, "");
+      const base = stripPdfExt(file.name);
       const title = base || file.name;
       await loadPdfBytes(new Uint8Array(buf), title, {
         blob: file,
@@ -2661,6 +2821,7 @@ if (IS_EMBEDDED) {
         viewMode: HAS_AUDIO ? "audio" : "viewer",
         zoom: lastScale || 0,
         fullscreen: Boolean(document.fullscreenElement || document.webkitFullscreenElement),
+        textMode: Boolean(textMode),
         search: { query: "", matchIndex: 0 },
         panels: {}
       },
@@ -2673,16 +2834,150 @@ if (IS_EMBEDDED) {
     };
   }
 
+  function persistSessionSync() {
+    if (!pdfDoc || !currentDocSource || !currentDocSource.fileHandle || !window.pdfstagePwa) return;
+    if (!currentTabId) currentTabId = window.pdfstagePwa.getOrCreateTabId();
+    const snap = captureCurrentState();
+    window.pdfstagePwa.saveTabStateSync({
+      tabId: currentTabId,
+      state: snap.state,
+      fileMeta: snap.fileMeta,
+      updatedAt: Date.now()
+    });
+  }
+
+  function persistSessionDb(force) {
+    if (!pdfDoc || !currentDocSource || !currentDocSource.fileHandle || !window.pdfstagePwa) return;
+    const now = Date.now();
+    if (!force && now - lastDbPersistAt < 4000) return;
+    lastDbPersistAt = now;
+    if (!currentTabId) currentTabId = window.pdfstagePwa.getOrCreateTabId();
+    const snap = captureCurrentState();
+    window.pdfstagePwa.saveSessionRecord(currentTabId, {
+      fileHandle: currentDocSource.fileHandle,
+      fileMeta: snap.fileMeta,
+      state: snap.state,
+      updatedAt: now
+    }).catch(function () {});
+  }
+
+  onSessionDirty = function (immediateDb) {
+    persistSessionSync();
+    persistSessionDb(immediateDb);
+  };
+  onSessionLoaded = function () {
+    hideResumePrompt();
+    if (pdfDoc && currentDocSource && currentDocSource.fileHandle) {
+      persistSessionSync();
+      persistSessionDb(true);
+    }
+  };
+
+  window.addEventListener("pagehide", persistSessionSync);
+  window.addEventListener("beforeunload", persistSessionSync);
+
+  async function restoreSessionRecord(rec, allowPrompt) {
+    if (!rec || !rec.fileHandle) return { ok: false, reason: "missing" };
+    const handle = rec.fileHandle;
+    try {
+      let perm = typeof handle.queryPermission === "function"
+        ? await handle.queryPermission({ mode: "read" })
+        : "granted";
+      if (perm !== "granted") {
+        if (!allowPrompt || typeof handle.requestPermission !== "function") {
+          return { ok: false, reason: "denied" };
+        }
+        perm = await handle.requestPermission({ mode: "read" });
+      }
+      if (perm !== "granted") {
+        if (allowPrompt) toast("Dateizugriff nicht erlaubt.", 3500, true);
+        return { ok: false, reason: "denied" };
+      }
+      const file = await handle.getFile();
+      const buf = await file.arrayBuffer();
+      const fallback = (rec.fileMeta && rec.fileMeta.fallbackTitle) || stripPdfExt(file.name) || file.name;
+      const restoreState = Object.assign({}, rec.state || {}, { reason: "session" });
+      await loadPdfBytes(new Uint8Array(buf), fallback, {
+        blob: file,
+        fileHandle: handle,
+        name: file.name,
+        size: file.size,
+        lastModified: file.lastModified || 0,
+        fallbackTitle: fallback
+      }, restoreState);
+      return { ok: true };
+    } catch (err) {
+      if (window.pdfstagePwa && (rec.id || rec.tabId)) {
+        window.pdfstagePwa.deleteSessionRecord(rec.id || rec.tabId).catch(function () {});
+        if (rec.tabId === currentTabId) window.pdfstagePwa.clearTabStateSync();
+      }
+      hideResumePrompt();
+      if (allowPrompt) {
+        const gone = err && (err.name === "NotFoundError" || err.name === "NotReadableError");
+        toast(gone ? "Datei wurde verschoben oder gel\u00f6scht." : ("Wiederherstellung fehlgeschlagen: " + (err && err.message ? err.message : err)), 5000, true);
+      }
+      return { ok: false, reason: "error", error: err };
+    }
+  }
+
   const fileInput = document.getElementById("fileInput");
   const openBtn = document.getElementById("openBtn");
   const openHeroBtn = document.getElementById("openHeroBtn");
-  if (openBtn && fileInput) openBtn.addEventListener("click", function () { fileInput.value = ""; fileInput.click(); });
-  if (openHeroBtn && fileInput) openHeroBtn.addEventListener("click", function () { fileInput.value = ""; fileInput.click(); });
+
+  async function pickLocalPdf() {
+    if (typeof window.showOpenFilePicker === "function") {
+      try {
+        const picks = await window.showOpenFilePicker({
+          multiple: false,
+          types: [{ description: "PDF-Dokumente", accept: { "application/pdf": [".pdf"] } }]
+        });
+        if (picks && picks[0]) {
+          const file = await picks[0].getFile();
+          await openLocalFile(file, picks[0]);
+        }
+        return;
+      } catch (err) {
+        if (err && err.name === "AbortError") return;
+      }
+    }
+    if (fileInput) {
+      fileInput.value = "";
+      fileInput.click();
+    }
+  }
+
+  if (openBtn) openBtn.addEventListener("click", pickLocalPdf);
+  if (openHeroBtn) openHeroBtn.addEventListener("click", pickLocalPdf);
   if (fileInput) {
     fileInput.addEventListener("change", function () {
       if (fileInput.files && fileInput.files[0]) openLocalFile(fileInput.files[0], null);
     });
   }
+
+  if (resumeBtnEl) {
+    resumeBtnEl.addEventListener("click", function () {
+      if (pendingResumeRecord) restoreSessionRecord(pendingResumeRecord, true);
+    });
+  }
+  if (resumeDismissBtnEl) {
+    resumeDismissBtnEl.addEventListener("click", function () {
+      const rec = pendingResumeRecord;
+      hideResumePrompt();
+      if (rec && window.pdfstagePwa) {
+        window.pdfstagePwa.deleteSessionRecord(rec.id || rec.tabId).catch(function () {});
+        if (!rec.tabId || rec.tabId === currentTabId) window.pdfstagePwa.clearTabStateSync();
+      }
+    });
+  }
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+    if (pdfDoc || !openOverlayEl || openOverlayEl.hidden || !resumeCardEl || resumeCardEl.hidden) return;
+    if (shortcutsModalEl && !shortcutsModalEl.hidden) return;
+    const ae = document.activeElement;
+    if (ae && (ae === openHeroBtn || ae === openBtn || ae === resumeDismissBtnEl || (ae.tagName === "A"))) return;
+    e.preventDefault();
+    if (pendingResumeRecord) restoreSessionRecord(pendingResumeRecord, true);
+  });
 
   document.addEventListener("dragover", function (e) {
     e.preventDefault();
@@ -2779,7 +3074,11 @@ if (IS_EMBEDDED) {
         window.__pdfstagePwa = {
           controller: pwa,
           captureCurrentState: captureCurrentState,
-          getCurrentSource: function () { return currentDocSource; }
+          getCurrentSource: function () { return currentDocSource; },
+          getTabId: function () { return currentTabId; },
+          getPendingSession: function () { return pendingResumeRecord; },
+          showResumePrompt: showResumePrompt,
+          restoreSessionRecord: restoreSessionRecord
         };
 
         const hid = window.pdfstagePwa.takeSessionHandoffId();
@@ -2787,7 +3086,7 @@ if (IS_EMBEDDED) {
           const rec = await window.pdfstagePwa.consumeHandoff(hid);
           if (rec && rec.pdfBlob) {
             const fallback = (rec.fileMeta && rec.fileMeta.fallbackTitle)
-              || ((rec.fileMeta && rec.fileMeta.name) ? rec.fileMeta.name.replace(/\.(pdfstage|stage)\.pdf$/i, "").replace(/\.pdf$/i, "") : "pdfstage");
+              || ((rec.fileMeta && rec.fileMeta.name) ? stripPdfExt(rec.fileMeta.name) : "pdfstage");
             const buf = await rec.pdfBlob.arrayBuffer();
             handoffRestoredThisLoad = true;
             await loadPdfBytes(new Uint8Array(buf), fallback, {
@@ -2797,7 +3096,37 @@ if (IS_EMBEDDED) {
               size: (rec.fileMeta && rec.fileMeta.size) || rec.pdfBlob.size,
               lastModified: (rec.fileMeta && rec.fileMeta.lastModified) || 0,
               fallbackTitle: fallback
-            }, rec.state || null);
+            }, Object.assign({}, rec.state || {}, { reason: "update" }));
+          }
+        }
+
+        if (!handoffRestoredThisLoad && !(window.opener && location.hash === "#cast")) {
+          if (!currentTabId) currentTabId = window.pdfstagePwa.getOrCreateTabId();
+          let sessionRec = await window.pdfstagePwa.getSessionRecord(currentTabId);
+          if (!sessionRec || !sessionRec.fileHandle) {
+            sessionRec = await window.pdfstagePwa.getLatestSessionRecord();
+          }
+          if (sessionRec && sessionRec.fileHandle) {
+            const syncSnap = window.pdfstagePwa.loadTabStateSync();
+            if (syncSnap && syncSnap.tabId === sessionRec.tabId && (syncSnap.updatedAt || 0) >= (sessionRec.updatedAt || 0)) {
+              sessionRec.state = syncSnap.state || sessionRec.state;
+              sessionRec.fileMeta = syncSnap.fileMeta || sessionRec.fileMeta;
+              sessionRec.updatedAt = syncSnap.updatedAt;
+            }
+            const navEntry = (typeof performance !== "undefined" && typeof performance.getEntriesByType === "function")
+              ? performance.getEntriesByType("navigation")[0]
+              : null;
+            const isReload = Boolean(navEntry && navEntry.type === "reload");
+            if (isReload && sessionRec.tabId === currentTabId) {
+              const res = await restoreSessionRecord(sessionRec, false);
+              if (res && res.ok) {
+                handoffRestoredThisLoad = true;
+              } else if (res && res.reason === "denied") {
+                showResumePrompt(sessionRec);
+              }
+            } else {
+              showResumePrompt(sessionRec);
+            }
           }
         }
       } catch (err) {
